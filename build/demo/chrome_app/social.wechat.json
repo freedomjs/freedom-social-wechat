@@ -1,0 +1,18 @@
+{
+  "name": "WeChat Social Provider",
+  "description": "Social provider using WeChat",
+  "app": {
+    "script": [
+      "wechat-social-provider.js"
+   	]
+  },
+  "default": "social",
+  "provides": [
+    "social"
+  ],
+  "permissions": [
+    "core.websocket",
+    "core.oauth",
+    "core.storage"
+  ]
+}

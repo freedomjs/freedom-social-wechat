@@ -84,6 +84,13 @@ module.exports = function(grunt) {
       }
     },
 
+    browserify: {
+      dist: {
+        src: ['src/wechat-social-provider.js'],
+        dest: 'dist/wechat-social-provider.static.js'
+      }
+    },
+
     jshint: {
       all: ['src/**/*.js'],
       options: {
@@ -109,9 +116,11 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks('grunt-contrib-connect');
   grunt.loadNpmTasks('grunt-contrib-copy');
   grunt.loadNpmTasks('grunt-contrib-jshint');
+  grunt.loadNpmTasks('grunt-browserify');
 
   grunt.registerTask('build', [
     'jshint',
+    'browserify',
     'copy'
   ]);
   grunt.registerTask('webapp_demo', [

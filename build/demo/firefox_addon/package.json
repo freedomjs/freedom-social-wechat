@@ -1,0 +1,9 @@
+{
+  "name": "freedom_social_wechat_firefox_addon",
+  "title": "freedom_social_wechat_firefox_addon",
+  "id": "", // TODO: get id.
+  "description": "demo of freedomjs WeChat social provider for Firefox",
+  "author": "",
+  "license": "Apache 2.0",
+  "version": "0.1"
+}

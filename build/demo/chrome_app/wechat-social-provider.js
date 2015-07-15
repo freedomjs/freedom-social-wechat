@@ -33,17 +33,15 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
       .then(weChatClient.checkForScan.bind(weChatClient), weChatClient.handleError)
       .then(weChatClient.webwxnewloginpage.bind(weChatClient), weChatClient.handleError)
       .then(weChatClient.webwxinit.bind(weChatClient), weChatClient.handleError)
-      .then(function (loginData) {
-        var clientState = {  // TODO: get a real token and get real client state.
-          userId: weChatClient.thisUser.UserName,  // weChatClient.<user>.UserName field
-          clientId: 'myClientId',  //TODO: come up with concept of clients within w-s-p context
-          status: "ONLINE",
-          lastUpdated: Date.now(),
-          lastSeen: Date.now()
-        };
-        fulfillLogin(clientState);
-        weChatClient.webwxgetcontact(loginData);  //TODO: might break everything.
-        //TODO: call getcontacts, etc.
+      .then(function () {
+      var clientState = {  // TODO: get a real token and get real client state.
+        userId: 'myUserId',  // weChatClient.<user>.UserName field
+        clientId: 'myClientId',  //TODO: come up with concept of clients within w-s-p context
+        status: "ONLINE",
+        lastUpdated: Date.now(),
+        lastSeen: Date.now()
+      };
+      fulfillLogin(clientState);
     }.bind(this), weChatClient.handleError);  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
 };
@@ -52,9 +50,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
  * Returns a Promise which fulfills with all known ClientStates.
  */
 WechatSocialProvider.prototype.getClients = function() {
-  return Promise.resolve({
-  
-  });
+  return Promise.resolve({});
 };
 
 /*
