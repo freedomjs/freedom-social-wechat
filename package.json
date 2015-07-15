@@ -26,5 +26,8 @@
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "wechat-webclient": "0.0.1"
   }
 }
