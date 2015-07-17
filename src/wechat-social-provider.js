@@ -23,22 +23,22 @@ var WechatSocialProvider = function(dispatchEvent) {
 
     oauth.initiateOAuth(OAUTH_REDIRECT_URLS).then(function(stateObj) {
       return oauth.launchAuthFlow(url, stateObj).then(function(responseUrl) {
-        return responseUrl;
+        return responseUrl;  // TODO: do i need to return something here?
       });
     });
   }.bind(this);
-this.networkName_ = 'wechat';
-this.initLogger_('WechatSocialProvider');
-this.initState_();
+  this.networkName_ = 'wechat';
+  this.initLogger_('WechatSocialProvider');
+  this.initState_();
 };
 
 /*
 * Initialize this.logger using the module name.
 */
 WechatSocialProvider.prototype.initLogger_ = function(moduleName) {
-this.logger = console;  // Initialize to console if it exists.
-if (typeof freedom !== 'undefined' && typeof freedom.core === 'function') {
-freedom.core().getLogger('[' + moduleName + ']').then(function(log) {
+  this.logger = console;  // Initialize to console if it exists.
+  if (typeof freedom !== 'undefined' && typeof freedom.core === 'function') {
+    freedom.core().getLogger('[' + moduleName + ']').then(function(log) {
       this.logger = log;
     }.bind(this));
   }
@@ -50,21 +50,22 @@ freedom.core().getLogger('[' + moduleName + ']').then(function(log) {
 WechatSocialProvider.prototype.login = function(loginOpts) {
   return new Promise(function(fulfillLogin, rejectLogin) {
     this.client.getUUID().then(function(uuid) {
-        return this.client.checkForScan(uuid, true);
-      }.bind(this), this.client.handleError)
-      .then(this.client.webwxnewloginpage.bind(this.client), this.client.handleError)
-      .then(this.client.webwxinit.bind(this.client), this.client.handleError)
-      .then(function (loginData) {
-        var clientState = {  // TODO: get a real clientId
-          userId: loginData.wxuin,
-          clientId: this.client.thisUser.UserName,  //TODO: come up with concept of clients within w-s-p context
-          status: "ONLINE",
-          lastUpdated: Date.now(),
-          lastSeen: Date.now()
-        };
-        fulfillLogin(clientState);
-        this.loginData = loginData;
-        this.client.webwxgetcontact(loginData);
+      return this.client.checkForScan(uuid, true);
+    }.bind(this), this.client.handleError)
+    .then(this.client.webwxnewloginpage.bind(this.client), this.client.handleError)
+    .then(this.client.webwxinit.bind(this.client), this.client.handleError)
+    .then(function (loginData) {
+      var clientState = {  
+        userId: loginData.wxuin,  // WeiXin unique identifying number
+        clientId: this.client.thisUser.UserName, // WeiXin session UserName 
+        status: "ONLINE",
+        lastUpdated: Date.now(),
+        lastSeen: Date.now()
+      };
+      fulfillLogin(clientState);
+      this.loginData = loginData;
+      this.client.webwxgetcontact(loginData);
+      setTimeout(this.client.synccheck.bind(this, loginData), 3000);
     }.bind(this), this.client.handleError);  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
 };
@@ -82,7 +83,7 @@ WechatSocialProvider.prototype.getClients = function() {
  * Returns a Promise which fulfills with all known UserProfiles
  */
 WechatSocialProvider.prototype.getUsers = function() {
-  //TODO: is this called after this.login? A: no guarantee. check for errors.
+  // This is just a getter method.
   return new Promise(function (fulfillGetUsers, rejectGetUsers) {
     if (this.client.contacts) fulfillGetUsers(this.client.contacts);
     else rejectGetUsers();
@@ -93,9 +94,17 @@ WechatSocialProvider.prototype.getUsers = function() {
  * Sends a message to another clientId.
  */
 WechatSocialProvider.prototype.sendMessage = function(friend, message) {
-  //friend and message Strings, both. <friend>.UserName and message string to be sent (hidden)
+  //<friend>.UserName and message string to be sent (hidden)
   //TODO: friend is clientId string.
-  return Promise.resolve();
+  return new Promise(function (fulfullSendMessage, rejectSendMessage) {
+    var msg = {
+      "type": 1,  // type: 51 for hidden messages, type 1 for plaintext
+      "content": message,
+      "recipient": friend,
+      "id": +new Date() + Math.random().toFixed(3).replace(".", "")
+    }
+    this.client.webwxsendmsg(this.loginData, msg);
+  }.bind(this));
 };
 
 /*
@@ -104,8 +113,8 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
 WechatSocialProvider.prototype.logout = function() {
   return new Promise(function (fulfillLogout, rejectLogout) {
     this.client.webwxlogout(this.loginData).then(function() {
-     fulfillLogout(this.addOrUpdateClient_(this.client.thisUser.UserName,'',"OFFLINE"));
-     //TODO: fix the clientId ^^^^
+     fulfillLogout(this.addOrUpdateClient_(this.loginData.wxuin, this.client.thisUser.UserName, "OFFLINE"));
+     //TODO: is this good?
     }.bind(this), rejectLogout);
   }.bind(this));
 };
@@ -122,11 +131,11 @@ WechatSocialProvider.prototype.initState_ = function() {
  */
 WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
   //TODO: what is the format of the friend being passed to me?
-  var userProfile = { //TODO: is this for this.client.thisUser as well????
+  var userProfile = { //TODO: is this for this.client.thisUser as well? YES.
     userId: friend.userId,  //this.client.contacts[x].UserName
     name: friend.name || '', //this.client.contacts[x].NickName
     lastUpdated: Date.now(),
-    url: friend.url || '',  //this.client.contacts[x].<TODO>  //TODO: what is this???
+    url: friend.url || '',  // <this isn't a thing in wechat... therefore leave blank, i.e. ''
     imageData: friend.imageData || ''  //this.client.contacts[x].HeadImgUrl
   };
   this.dispatchEvent_('onUserProfile', userProfile); //TODO: how to dispatchEvent_?
@@ -153,12 +162,6 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(userId, clientId, s
 WechatSocialProvider.prototype.handleMessage_ = function(clientState, message) {
   this.dispatchEvent_('onMessage', {from: clientState, message: message});
 };
-
-// TODO: consider killing this method if not necessary
-WechatSocialProvider.prototype.getLoginData_ = function () {
-  return this.loginData;
-};
-
 
 // Register provider when in a module context.
 if (typeof freedom !== 'undefined') {
