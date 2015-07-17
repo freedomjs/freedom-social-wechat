@@ -22,7 +22,7 @@ var WechatSocialProvider = function(dispatchEvent) {
     this.client.log(1, "QR code can be scanned at: " + url, -1);
 
     oauth.initiateOAuth(OAUTH_REDIRECT_URLS).then(function(stateObj) {
-      return oauth.launchAuthFlow(url, stateObj).then(function(responseUrl) {
+      return oauth.launchAuthFlow('https://' + url, stateObj).then(function(responseUrl) {
         return responseUrl;
       });
     });
@@ -74,7 +74,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
  */
 WechatSocialProvider.prototype.getClients = function() {
   return Promise.resolve({
-  
+
   });
 };
 
