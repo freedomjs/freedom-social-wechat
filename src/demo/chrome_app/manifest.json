@@ -14,7 +14,8 @@
     "storage",
     "https://www.googleapis.com/*",
     "https://accounts.google.com/*",
-    "http://localhost/*"
+    "http://localhost/*",
+    "https://*.wechat.com/*"
   ],
   "sockets":{
     "tcp": {

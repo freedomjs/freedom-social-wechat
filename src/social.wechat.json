@@ -3,7 +3,7 @@
   "description": "Social provider using WeChat",
   "app": {
     "script": [
-      "wechat-social-provider.js"
+      "wechat-social-provider.static.js"
    	]
   },
   "default": "social",
@@ -13,6 +13,7 @@
   "permissions": [
     "core.websocket",
     "core.oauth",
+    "core.xhr",
     "core.storage"
   ]
 }

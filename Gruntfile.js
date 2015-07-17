@@ -81,6 +81,15 @@ module.exports = function(grunt) {
         filter: 'isFile',
         expand: true,
         onlyIf: 'modified'
+      },
+
+      simple_chrome: {
+        cwd: 'node_modules',
+        src: ['freedom-for-chrome/**/*'],
+        dest: 'build/demo/simple_chrome/',
+        flatten: false,
+        expand: true,
+        onlyIf: 'modified'
       }
     },
 
@@ -88,6 +97,10 @@ module.exports = function(grunt) {
       dist: {
         src: ['src/wechat-social-provider.js'],
         dest: 'dist/wechat-social-provider.static.js'
+      },
+      simple_chrome: {
+        src: ['src/demo/simple_chrome/background.core-env.js'],
+        dest: 'build/demo/simple_chrome/background.core-env.static.js'
       }
     },
 
