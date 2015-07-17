@@ -55,16 +55,36 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
     .then(this.client.webwxnewloginpage.bind(this.client), this.client.handleError)
     .then(this.client.webwxinit.bind(this.client), this.client.handleError)
     .then(function (loginData) {
-      var clientState = {  
+      var clientState = {
         userId: loginData.wxuin,  // WeiXin unique identifying number
-        clientId: this.client.thisUser.UserName, // WeiXin session UserName 
+        clientId: this.client.thisUser.UserName, // WeiXin session UserName
         status: "ONLINE",
         lastUpdated: Date.now(),
         lastSeen: Date.now()
       };
       fulfillLogin(clientState);
       this.loginData = loginData;
-      this.client.webwxgetcontact(loginData);
+      this.client.webwxgetcontact(loginData).then(function(){
+        for (var i = 0; i < this.client.contacts.length; i++) {
+          var friend = this.client.contacts[i];
+          var userProfile = { //TODO: is this for this.client.thisUser as well? YES.
+            userId: friend.Uin,  //this.client.contacts[x].UserName
+            name: friend.NickName || '', //this.client.contacts[x].NickName
+            lastUpdated: Date.now(),
+            url: friend.url || '',  // <this isn't a thing in wechat... therefore leave blank, i.e. ''
+            imageData: this.client.WEBDOM + friend.HeadImgUrl  //this.client.contacts[x].HeadImgUrl
+          };
+          this.dispatchEvent_('onUserProfile', userProfile); //TODO: how to dispatchEvent_?
+          var clientState = {
+            userId: friend.Uin,
+            clientId: friend.UserName,
+            status: 'ONLINE',
+            lastUpdated: Date.now(),
+            lastSeen: Date.now()
+          };
+          this.dispatchEvent_('onClientState', clientState);
+        }
+      }.bind(this));
       setTimeout(this.client.synccheck.bind(this, loginData), 3000);
     }.bind(this), this.client.handleError);  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
@@ -102,7 +122,7 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
       "content": message,
       "recipient": friend,
       "id": +new Date() + Math.random().toFixed(3).replace(".", "")
-    }
+    };
     this.client.webwxsendmsg(this.loginData, msg);
   }.bind(this));
 };
