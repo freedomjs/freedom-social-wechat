@@ -11,8 +11,8 @@ var WechatSocialProvider = function(dispatchEvent) {
   this.initLogger_('WechatSocialProvider');
 
   this.loginData = null;
-  this.clientStates = null;
-  this.UserProfiles = null;
+  this.clientStates = [];
+  this.userProfiles = [];
   
   this.initHandlers_();
 };  // End of constructor
@@ -59,6 +59,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
             url: friend.url || '',  // N/A
             imageData: "https://" + this.client.WEBDOM + friend.HeadImgUrl
           };
+          userProfiles.push(userProfile);
           this.dispatchEvent_('onUserProfile', userProfile);
           var clientState = {
             userId: friend.Uin,
@@ -67,6 +68,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
             lastUpdated: Date.now(),
             lastSeen: Date.now()
           };
+          clientStates.push(clientState);
           this.dispatchEvent_('onClientState', clientState);
         }
       }.bind(this));
@@ -80,20 +82,14 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
  * Returns a Promise which fulfills with all known ClientStates.
  */
 WechatSocialProvider.prototype.getClients = function() {
-  return Promise.resolve({
-
-  });
+  return Promise.resolve({ this.clientStates; });
 };
 
 /*
  * Returns a Promise which fulfills with all known UserProfiles
  */
 WechatSocialProvider.prototype.getUsers = function() {
-  // This is just a getter method.
-  return new Promise(function (fulfillGetUsers, rejectGetUsers) {
-    if (this.client.contacts) fulfillGetUsers(this.client.contacts);
-    else rejectGetUsers();
-  }.bind(this));
+  return Promise.resolve({ this.userProfiles; });
 };
 
 /*
@@ -117,10 +113,14 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
  */
 WechatSocialProvider.prototype.logout = function() {
   return new Promise(function (fulfillLogout, rejectLogout) {
-    this.client.webwxlogout(this.loginData).then(function() {
-     fulfillLogout(this.addOrUpdateClient_(this.loginData.wxuin, this.client.thisUser.UserName, "OFFLINE"));
-     //TODO: is this good?
-    }.bind(this), rejectLogout);
+    if (this.loginData) {
+      this.client.webwxlogout(this.loginData).then(function() {
+       fulfillLogout(this.addOrUpdateClient_(this.loginData.wxuin, this.client.thisUser.UserName, "OFFLINE"));
+       //TODO: is this good?
+      }.bind(this), rejectLogout);
+    } else {
+      rejectLogout();
+    }
   }.bind(this));
 };
 
