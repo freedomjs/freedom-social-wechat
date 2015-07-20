@@ -59,7 +59,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
             url: friend.url || '',  // N/A
             imageData: "https://" + this.client.WEBDOM + friend.HeadImgUrl
           };
-          userProfiles.push(userProfile);
+          this.userProfiles.push(userProfile);
           this.dispatchEvent_('onUserProfile', userProfile);
           var clientState = {
             userId: friend.Uin,
@@ -68,7 +68,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
             lastUpdated: Date.now(),
             lastSeen: Date.now()
           };
-          clientStates.push(clientState);
+          this.clientStates.push(clientState);
           this.dispatchEvent_('onClientState', clientState);
         }
       }.bind(this));
