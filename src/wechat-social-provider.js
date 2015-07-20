@@ -82,14 +82,14 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
  * Returns a Promise which fulfills with all known ClientStates.
  */
 WechatSocialProvider.prototype.getClients = function() {
-  return Promise.resolve({ this.clientStates; });
+  return Promise.resolve(this.clientStates);
 };
 
 /*
  * Returns a Promise which fulfills with all known UserProfiles
  */
 WechatSocialProvider.prototype.getUsers = function() {
-  return Promise.resolve({ this.userProfiles; });
+  return Promise.resolve(this.userProfiles);
 };
 
 /*
