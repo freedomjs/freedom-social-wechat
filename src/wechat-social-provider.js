@@ -6,31 +6,16 @@ var wechat = require('../node_modules/wechat-webclient/wechat.js');
 
 var WechatSocialProvider = function(dispatchEvent) {
   this.client = new wechat.weChatClient();
-  this.loginData = null;
   this.dispatchEvent_ = dispatchEvent;
-  this.client.events.onMessage = function(message) {
-    this.dispatchEvent_("onMessage", message);
-  };
-  this.client.events.onUUID = function(url) {
-    var OAUTH_REDIRECT_URLS = [
-        "https://www.uproxy.org/oauth-redirect-uri",
-        "http://freedomjs.org/",
-        "http://localhost:8080/",
-        "https://fmdppkkepalnkeommjadgbhiohihdhii.chromiumapp.org/"
-      ];
-    var oauth = freedom["core.oauth"]();
-    this.client.log(1, "QR code can be scanned at: " + url, -1);
-
-    oauth.initiateOAuth(OAUTH_REDIRECT_URLS).then(function(stateObj) {
-      return oauth.launchAuthFlow('https://' + url, stateObj).then(function(responseUrl) {
-        return responseUrl;
-      });
-    });
-  }.bind(this);
   this.networkName_ = 'wechat';
   this.initLogger_('WechatSocialProvider');
-  this.initState_();
-};
+
+  this.loginData = null;
+  this.clientStates = null;
+  this.UserProfiles = null;
+  
+  this.initHandlers_();
+};  // End of constructor
 
 /*
 * Initialize this.logger using the module name.
@@ -64,17 +49,17 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
       };
       fulfillLogin(clientState);
       this.loginData = loginData;
-      this.client.webwxgetcontact(loginData).then(function(){
+      this.client.webwxgetcontact(loginData).then(function() {
         for (var i = 0; i < this.client.contacts.length; i++) {
           var friend = this.client.contacts[i];
-          var userProfile = { //TODO: is this for this.client.thisUser as well? YES.
-            userId: friend.Uin,  //this.client.contacts[x].UserName
-            name: friend.NickName || '', //this.client.contacts[x].NickName
+          var userProfile = { 
+            userId: friend.Uin,
+            name: friend.NickName || '',
             lastUpdated: Date.now(),
-            url: friend.url || '',  // <this isn't a thing in wechat... therefore leave blank, i.e. ''
-            imageData: this.client.WEBDOM + friend.HeadImgUrl  //this.client.contacts[x].HeadImgUrl
+            url: friend.url || '',  // N/A
+            imageData: "https://" + this.client.WEBDOM + friend.HeadImgUrl
           };
-          this.dispatchEvent_('onUserProfile', userProfile); //TODO: how to dispatchEvent_?
+          this.dispatchEvent_('onUserProfile', userProfile);
           var clientState = {
             userId: friend.Uin,
             clientId: friend.UserName,
@@ -85,7 +70,8 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
           this.dispatchEvent_('onClientState', clientState);
         }
       }.bind(this));
-      setTimeout(this.client.synccheck.bind(this, loginData), 3000);
+      //setTimeout(this.client.synccheck.bind(this, loginData), 3000);
+      return this.client.synccheck(loginData); //TODO check if this works or is DDOSing wechat
     }.bind(this), this.client.handleError);  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
 };
@@ -115,13 +101,12 @@ WechatSocialProvider.prototype.getUsers = function() {
  */
 WechatSocialProvider.prototype.sendMessage = function(friend, message) {
   //<friend>.UserName and message string to be sent (hidden)
-  //TODO: friend is clientId string.
   return new Promise(function (fulfullSendMessage, rejectSendMessage) {
     var msg = {
-      "type": 1,  // type: 51 for hidden messages, type 1 for plaintext
+      "type": 51,  // type: 51 for hidden messages, type 1 for plaintext
       "content": message,
       "recipient": friend,
-      "id": +new Date() + Math.random().toFixed(3).replace(".", "")
+      "id": Date.now() + Math.random().toFixed(3).replace(".", "")
     };
     this.client.webwxsendmsg(this.loginData, msg);
   }.bind(this));
@@ -142,8 +127,40 @@ WechatSocialProvider.prototype.logout = function() {
 /*
  * Initialize state.
  */
-WechatSocialProvider.prototype.initState_ = function() {
+WechatSocialProvider.prototype.initHandlers_ = function() {
   this.addOrUpdateClient_('','',"OFFLINE"); //FIXME???????
+
+  // Event handlers
+  this.client.events.onMessage = function(message) {
+    var eventMessage = {
+      "from": {
+        "userId": message.Uin,
+        "clientId": message.UserName, // TODO
+        "status": "ONLINE",
+        "lastUpdated": Date.now(),
+        "lastSeen": Date.now()
+      },
+      "message": message.Content
+    };
+    this.dispatchEvent_("onMessage", eventMessage);
+  };
+
+  this.client.events.onUUID = function(url) {
+    var OAUTH_REDIRECT_URLS = [
+        "https://www.uproxy.org/oauth-redirect-uri",
+        "http://freedomjs.org/",
+        "http://localhost:8080/",
+        "https://fmdppkkepalnkeommjadgbhiohihdhii.chromiumapp.org/"
+      ];
+    var oauth = freedom["core.oauth"]();
+    this.client.log(1, "QR code can be scanned at: " + url, -1);
+
+    oauth.initiateOAuth(OAUTH_REDIRECT_URLS).then(function(stateObj) {
+      return oauth.launchAuthFlow('https://' + url, stateObj).then(function(responseUrl) {
+        return responseUrl;
+      });
+    });
+  }.bind(this);
 };
 
 /*
