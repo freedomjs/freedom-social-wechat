@@ -10,20 +10,31 @@ var WechatSocialProvider = function(dispatchEvent) {
   this.networkName_ = 'wechat';
   this.initLogger_('WechatSocialProvider');
 
-  this.HIDDENMSGTYPE = 51;  // As of July 23, 2015.
+  this.syncInterval = 4000;  // This seems like a good interval (August 1st, 2015)
+
+  this.initState_();
+  this.initHandlers_();
+  
+};  // End of constructor
+
+/*
+ * Initializes the states of several variables such as the clientStates.
+ */
+WechatSocialProvider.prototype.initState_ = function() {
   this.loginData = null;
-  this.syncInterval = 4000;
   this.clientStates = [];
   this.userProfiles = [];
-  
-  // Event handlers
+};
+
+/*
+ * Sets up event handlers
+ */ 
+WechatSocialProvider.prototype.initHandlers_ = function() {
+
   this.client.events.onMessage = function(message) {
     var availability = "ONLINE_WITH_OTHER_APP";
-    if (message.MsgType === this.HIDDENMSGTYPE) {
+    if (message.MsgType === this.client.HIDDENMSGTYPE) {
       availability = "ONLINE";
-        //TODO... can't just change to ONLINE when getting this... or when getting 51.
-        // need to check periodically to make sure that they're on uproxy... pings every
-        // 1-5 minutes maybe to check their status to ONLINE/ONLINE_WITH_OTHER_APP.
     }
     var eventMessage = {
       "from": {
@@ -60,7 +71,7 @@ var WechatSocialProvider = function(dispatchEvent) {
     if (iconJSON) {
       try {
         var jason = JSON.parse(iconJSON);
-        var friend;
+        var friend = null;
         for (var i = 0; i < this.client.contacts.length; i++) {
           if (this.client.contacts[i].HeadImgUrl === jason.iconURLPath) {
             friend = this.client.contacts[i];
@@ -69,14 +80,15 @@ var WechatSocialProvider = function(dispatchEvent) {
             i = this.client.contacts.length;  // ends loop
           }
         }
-        if (friend) this.updateUserProfile__(friend, jason.imageURL);
-        else console.error("Icon corresponds to unknown contact.");
+        // Will run if a friend was found that matched this iconURLPath
+        if (friend) this.updateUserProfile__(friend, jason.dataURL);
+        else this.client.handleError("Icon corresponds to unknown contact.");
       } catch (e) {
         this.client.handleError(e);
       }
     }
   }.bind(this);
-};  // End of constructor
+};
 
 /*
 * Initialize this.logger using the module name.
@@ -106,11 +118,11 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
       this.client.webwxgetcontact(loginData, false).then(function() {  // TODO: T vs F
         for (var i = 0; i < this.client.contacts.length; i++) {
           var friend = this.client.contacts[i];
-          //friend.online = "ONLINE_WITH_OTHER_APP";  // TODO: modify this value throughout.
-          this.addOrUpdateClient_(friend, "ONLINE");  // TODO: better checking for status
+          this.addOrUpdateClient_(friend, "ONLINE");  //FIXME
+          //ONLINE_WITH_OTHER_APP will change when they ping back
           this.addUserProfile_(friend);
         }
-      }.bind(this));
+      }.bind(this), this.client.handleError);
       setTimeout(this.client.synccheck.bind(this.client, loginData), this.syncInterval);
     }.bind(this), this.client.handleError);  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
@@ -137,11 +149,12 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
   //<friend>.UserName and message string to be sent (hidden)
   return new Promise(function (fulfullSendMessage, rejectSendMessage) {
     var msg = {
-      "type": this.HIDDENMSGTYPE,
+      "type": this.client.HIDDENMSGTYPE,
       "content": message,
       "recipient": friend,
     };
-    //this.client.webwxsendmsg(this.loginData, msg); //TODO: uncomment me.
+    this.client.log(2, "WechatSocialProvider sending message", msg);
+    this.client.webwxsendmsg(this.loginData, msg).then(fulfullSendMessage, rejectSendMessage); 
   }.bind(this));
 };
 
@@ -152,15 +165,13 @@ WechatSocialProvider.prototype.logout = function() {
   return new Promise(function (fulfillLogout, rejectLogout) {
     if (this.loginData) {
       this.client.webwxlogout(this.loginData).then(function() {
-        this.addOrUpdateClient_(this.loginData.wxuin, this.client.thisUser.UserName, "OFFLINE");
-        this.client.log("WechatSocialProvider logout");
+        this.addOrUpdateClient_(this.client.thisUser, "OFFLINE");
+        this.client.log(0, "WechatSocialProvider logout");
+        this.initState_();
         fulfillLogout();
-       //TODO: have uProxy UI change to reflect the logout.
-      }.bind(this), function(e) {
-        console.error("error on WechatSocialProvider logout.");
-        rejectLogout();
-      });
+      }.bind(this), this.client.handleError);
     } else {
+      this.client.log(-1, "Couldn't log out; not logged in");
       rejectLogout();
     }
   }.bind(this));
@@ -175,7 +186,7 @@ WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
     "name": friend.NickName || '',  // Their display name
     "lastUpdated": Date.now(),
     "url": friend.url || '',  // N/A
-    "imageData": ''
+    "imageData": ("https://" + this.client.WEBDOM + friend.HeadImgUrl) || '' //FIXME??? 
   };
   this.userProfiles.push(userProfile);
   this.dispatchEvent_('onUserProfile', userProfile);
@@ -187,15 +198,16 @@ WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
  */
 WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availability) {
   var update = false;
-  var clientState;
+  var clientState = null;
   for (var i = 0; i < this.clientStates.length; i++) {
     clientState = this.clientStates[i];
-    if (clientState.userId === friend.Uin) {
-      update = true;
+    if (clientState.userId === friend.Uin) {  // is this what i want to check/do here????
+      //might want to check the clientId here, and keep it fixed...
       clientState.clientId = friend.UserName;
       clientState.status = availability;
       clientState.lastUpdated = Date.now();
       clientState.lastSeen = Date.now();
+      update = true;
     }
   }
   if (!update) {
@@ -219,6 +231,7 @@ WechatSocialProvider.prototype.handleMessage_ = function(clientState, message) {
   this.dispatchEvent_('onMessage', {"from": clientState, "message": message});
 };
 
+
 /*
  *  getIcon_ helper method. updates the userProfile corresponding to the given 
  *  friend with the given imageData url.
@@ -228,7 +241,7 @@ WechatSocialProvider.prototype.updateUserProfile__ = function(friend, iconURL) {
   for (var i = 0; i < this.userProfiles.length; i++) {
     if (this.userProfiles[i].userId === friend.userId) {
       this.userProfiles[i].imageData = iconURL;
-      this.dispatchEvent_('onUserProfile', userProfile);
+      this.dispatchEvent_('onUserProfile', this.userProfiles[i]);
       //TODO: consider URL.revokeObjectURL(iconURL); here since it's already been set?
       // really, it should be done once the image has loaded...
 
