@@ -215,13 +215,15 @@ WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
 WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availability) {
   var update = false;
   var clientState = null;
+  var updatedClient = null;
   for (clientState in this.clientStates) {
-    if (clientState.userId === friend.Uin) {  // is this what i want to check/do here????
-      //might want to check the clientId here, and keep it fixed...
-      clientState.clientId = friend.UserName;
-      clientState.status = availability;
-      clientState.lastUpdated = Date.now();
-      clientState.lastSeen = Date.now();
+    if (clientState === friend.UserName && !update) {  // checks clientId with incoming clientId
+      //this.clientStates[clientState].clientId = friend.UserName;
+      //this.clientStates[clientState].userId = friend.Uin;
+      this.clientStates[clientState].status = availability;
+      this.clientStates[clientState].lastUpdated = Date.now();
+      this.clientStates[clientState].lastSeen = Date.now();
+      updatedClient = this.clientStates[clientState];
       update = true;
     }
   }
@@ -234,9 +236,9 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
       "lastSeen": Date.now()
     };
     this.clientStates[clientState.clientId] = clientState;
+  } else if (updatedClient) {
+    clientState = updatedClient;
   }
-  this.getUsers();
-  this.getClients();
   this.dispatchEvent_('onClientState', clientState);
   return clientState;
 };
