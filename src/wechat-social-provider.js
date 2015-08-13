@@ -36,9 +36,16 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     if (message.MsgType === this.client.HIDDENMSGTYPE) {
       availability = "ONLINE";
     }
+    var foundUID = false;
+    for (var clientId in this.clientStates) {
+      if (clientId === message.FromUserName && !foundUID) {
+        message.UID = this.clientStates[clientIDs].userId;
+        foundUID = true;
+      }
+    }
     var eventMessage = {
       "from": {
-        "userId": message.Uin,
+        "userId": message.UID,
         "clientId": message.FromUserName,
         "status": availability,
         "lastUpdated": Date.now(),
