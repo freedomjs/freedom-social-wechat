@@ -22,8 +22,8 @@ var WechatSocialProvider = function(dispatchEvent) {
  */
 WechatSocialProvider.prototype.initState_ = function() {
   this.loginData = null;
-  this.clientStates = [];
-  this.userProfiles = [];
+  this.clientStates = {};
+  this.userProfiles = {};
 };
 
 /*
@@ -46,6 +46,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
       },
       "message": message.Content
     };
+    this.client.log(5, eventMessage.message, -1);
     this.dispatchEvent_("onMessage", eventMessage);
   }.bind(this);
 
@@ -113,15 +114,29 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
     .then(this.client.webwxnewloginpage.bind(this.client), this.client.handleError)
     .then(this.client.webwxinit.bind(this.client), this.client.handleError)
     .then(function (loginData) {
-      fulfillLogin(this.addOrUpdateClient_(this.client.thisUser, "ONLINE"));
       this.loginData = loginData;
       this.client.webwxgetcontact(loginData, false).then(function() {  // TODO: T vs F
+        var me = this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
+        this.addUserProfile_(this.client.thisUser);
         for (var i = 0; i < this.client.contacts.length; i++) {
           var friend = this.client.contacts[i];
           this.addOrUpdateClient_(friend, "ONLINE");  //FIXME
           //ONLINE_WITH_OTHER_APP will change when they ping back
           this.addUserProfile_(friend);
         }
+        var clients = this.getClients();
+        var users = this.getUsers();
+        for (var device in clients) {
+          for (var thing in clients[device]) {
+            this.client.log(4, "device: " + thing + " => " + clients[device][thing], -1);
+          }
+        }
+        for (var person in users) {
+          for (var blah in users[person]) {
+            this.client.log(4, "person: " + users[person] + " => " + users[person][blah], -1);
+          }
+        }
+        fulfillLogin(me);
       }.bind(this), this.client.handleError);
       setTimeout(this.client.synccheck.bind(this.client, loginData), this.syncInterval);
     }.bind(this), this.client.handleError);  // end of getOAuthToken_
@@ -132,14 +147,14 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
  * Returns a Promise which fulfills with all known ClientStates.
  */
 WechatSocialProvider.prototype.getClients = function() {
-  return Promise.resolve(this.clientStates);
+  return this.clientStates;
 };
 
 /*
  * Returns a Promise which fulfills with all known UserProfiles
  */
 WechatSocialProvider.prototype.getUsers = function() {
-  return Promise.resolve(this.userProfiles);
+  return this.userProfiles;
 };
 
 /*
@@ -147,13 +162,14 @@ WechatSocialProvider.prototype.getUsers = function() {
  */
 WechatSocialProvider.prototype.sendMessage = function(friend, message) {
   //<friend>.UserName and message string to be sent (hidden)
+  this.client.log(-1, "message sending in progress..");
   return new Promise(function (fulfullSendMessage, rejectSendMessage) {
     var msg = {
       "type": this.client.HIDDENMSGTYPE,
       "content": message,
-      "recipient": friend,
+      "recipient": friend
     };
-    this.client.log(2, "WechatSocialProvider sending message", msg);
+    this.client.log(2, "WechatSocialProvider sending message", msg.content);
     this.client.webwxsendmsg(this.loginData, msg).then(fulfullSendMessage, rejectSendMessage); 
   }.bind(this));
 };
@@ -188,7 +204,7 @@ WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
     "url": friend.url || '',  // N/A
     "imageData": ("https://" + this.client.WEBDOM + friend.HeadImgUrl) || '' //FIXME??? 
   };
-  this.userProfiles.push(userProfile);
+  this.userProfiles[friend.Uin] = userProfile;
   this.dispatchEvent_('onUserProfile', userProfile);
   return userProfile;
 };
@@ -199,8 +215,7 @@ WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
 WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availability) {
   var update = false;
   var clientState = null;
-  for (var i = 0; i < this.clientStates.length; i++) {
-    clientState = this.clientStates[i];
+  for (clientState in this.clientStates) {
     if (clientState.userId === friend.Uin) {  // is this what i want to check/do here????
       //might want to check the clientId here, and keep it fixed...
       clientState.clientId = friend.UserName;
@@ -218,8 +233,10 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
       "lastUpdated": Date.now(),
       "lastSeen": Date.now()
     };
-    this.clientStates.push(clientState);
+    this.clientStates[clientState.clientId] = clientState;
   }
+  this.getUsers();
+  this.getClients();
   this.dispatchEvent_('onClientState', clientState);
   return clientState;
 };
@@ -238,16 +255,11 @@ WechatSocialProvider.prototype.handleMessage_ = function(clientState, message) {
  */
 WechatSocialProvider.prototype.updateUserProfile__ = function(friend, iconURL) {
   this.client.log(0, "I'm updating the userProfile", friend.NickName);
-  for (var i = 0; i < this.userProfiles.length; i++) {
-    if (this.userProfiles[i].userId === friend.userId) {
-      this.userProfiles[i].imageData = iconURL;
-      this.dispatchEvent_('onUserProfile', this.userProfiles[i]);
-      //TODO: consider URL.revokeObjectURL(iconURL); here since it's already been set?
-      // really, it should be done once the image has loaded...
-
-      i = this.userProfiles.length;  // ends loop when we've found the match.
-    }
-  }
+  var profile = this.userProfiles[friend.Uin];
+  profile.imageData = iconURL;
+  this.dispatchEvent_('onUserProfile', profile);
+  //TODO: consider URL.revokeObjectURL(iconURL); here since it's already been set?
+  // really, it should be done once the image has loaded...
 };
 
 // Register provider when in a module context.
