@@ -39,7 +39,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     var foundUID = false;
     for (var clientId in this.clientStates) {
       if (clientId === message.FromUserName && !foundUID) {
-        message.UID = this.clientStates[clientIDs].userId;
+        message.UID = this.clientStates[clientId].userId;
         foundUID = true;
       }
     }
