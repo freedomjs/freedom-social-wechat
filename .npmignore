@@ -1,0 +1,10 @@
+# Build files
+build/
+
+# Source files
+src/
+
+# Development files
+*.swp
+.git/
+node_modules/
