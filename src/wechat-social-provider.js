@@ -11,6 +11,7 @@ var wechat = require("../node_modules/wechat-webclient/wechat.js");
  */
 var WechatSocialProvider = function(dispatchEvent) {
   this.client = new wechat.weChatClient(true, true);
+  this.version = 1;  // social API version
   this.dispatchEvent_ = dispatchEvent;
   this.networkName_ = "wechat";
   this.initLogger_("WechatSocialProvider");
@@ -65,6 +66,23 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
   }.bind(this);
 
   /*
+   *  Updates clientStates and userProfiles using the information of a modified chatroom.
+   *  @param {Object} — modified chatroom from this.client.webwxsync
+   */
+  this.client.events.onModChatroom = function(modChatroom) {
+    for (var i = 0; i < modChatroom.MemberCount; i++) {
+      var member = modChatroom.MemberList[i];
+      var clientId = member.UserName;
+      if (member.Uin && !this.clientStates[clientId].userId) {
+        this.client.log(1, "contact Uin discovered: " + member.NickName + " => " + member.Uin);
+        this.clientStates[clientId].userId = member.Uin;
+        this.dispatchEvent_("onClientState", this.clientStates[clientId]);
+        this.addUserProfile_(member);
+      }
+    }
+  }.bind(this);
+
+  /*
    * Defines how to handle the receiving of a new UUID from the WeChat webservice.
    * @param {String} url of QR code
    */
@@ -97,6 +115,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
   this.client.events.onIcon = function(iconJSON) {
     if (iconJSON) {
       try {
+        //this.client.log(4, iconJSON, -1); // Verbose
         var jason = JSON.parse(iconJSON);
         var clientId = jason.iconURLPath.split("?")[1].split("&")[1].split("=")[1];
         var friend = this.userProfiles[this.clientStates[clientId].userId];
@@ -111,6 +130,10 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     }
   }.bind(this);
 
+  this.client.events.onInitialized = function() {
+    setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
+  }.bind(this);
+
   /*
    * Defines the function that handles the case where the retrieved UUID corresponds
    * to the wrong domain for this user trying to get in. Also saves which domain 
@@ -121,9 +144,9 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
    * @returns {Promise} that fulfills if restepping through the beginning of the 
    *  login process went sucessfully, rejects promise if there was an error.
    */ 
-  this.client.events.onWrongDom = function(referral) {
+  this.client.events.onWrongDom = function(shouldDownloadQR) {
     this.storage.set("WechatSocialProvider-was-QQ-user", this.client.isQQuser);
-    return this.beginLogin_();
+    return this.client.prelogin(shouldDownloadQR);
   }.bind(this);
 };
 
@@ -145,21 +168,23 @@ WechatSocialProvider.prototype.initLogger_ = function(moduleName) {
  */
 WechatSocialProvider.prototype.login = function(loginOpts) {
   return new Promise(function(fulfillLogin, rejectLogin) {
-    this.beginLogin_()
-    .then(this.client.webwxinit.bind(this.client), this.client.handleError.bind(this))
-    .then(function () {
-      this.client.webwxgetcontact(true).then(function() {  // TODO: T vs F
-        var me = this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
-        this.addUserProfile_(this.client.thisUser);
-        for (var friend in this.client.contacts) {
-          this.addOrUpdateClient_(this.client.contacts[friend], "ONLINE");  //FIXME
-          //ONLINE_WITH_OTHER_APP will change when/if they ping back
-          this.addUserProfile_(this.client.contacts[friend]);
-        }
-        fulfillLogin(me);
-      }.bind(this), this.client.handleError.bind(this));
-      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
-    }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
+    this.client.login(false, true)
+    .then(function() {
+      var me = this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
+      this.addUserProfile_(this.client.thisUser);
+      //this.client.webwxoplog();
+      for (var friend in this.client.contacts) {
+        // assuming that the user is logged in on some device since most people wouldn't log out
+        // of wechat on their phone. ONLINE_WITH_OTHER_APP will change if they login to uProxy.
+        this.addOrUpdateClient_(this.client.contacts[friend], "ONLINE_WITH_OTHER_APP");
+        this.addUserProfile_(this.client.contacts[friend]);
+      }
+      fulfillLogin(me);
+      // FIXME JUST FOR TESTING PURPOSES
+      this.client.webwxsearchcontact("wei");
+      this.inviteContact_(Object.keys(this.client.contacts)[3]); // TODO: remove me. after finish testing.
+      // FIXME JUST FOR TESTING PURPOSES
+    }.bind(this), this.client.handleError.bind(this));
   }.bind(this));  // end of return new Promise
 };
 
@@ -202,7 +227,7 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
 WechatSocialProvider.prototype.logout = function() {
   return new Promise(function (fulfillLogout, rejectLogout) {
     if (this.client.loginData) {
-      this.client.webwxlogout().then(function() {
+      this.client.webwxlogout().then(function() {  // FIXME change order here
         this.addOrUpdateClient_(this.client.thisUser, "OFFLINE");
         //this.client.log(0, "WechatSocialProvider logout");
         this.initState_();
@@ -250,24 +275,38 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
       "userId": friend.Uin,  // Unique identification number
       "clientId": friend.UserName,  // Session username
       "status": availability,  // All caps string saying online, offline, or online on another app.
-      "lastUpdated": Date.now(),
-      "lastSeen": Date.now()
     };
+    if (this.version === 2) {
+      state["timestamp"] = Date.now();
+    } else {
+      state["lastUpdated"] = Date.now();
+      state["lastSeen"] = Date.now();
+    }
   }
   this.clientStates[friend.UserName] = state;
   this.dispatchEvent_('onClientState', this.clientStates[friend.UserName]);
   return this.clientStates[friend.UserName];
 };
 
-/*
- * Steps through the beginning parts of the WeChat login process.
- * @returns {Promise} resolves on sucessfully getting loginData, rejects otherwise.
- */
-WechatSocialProvider.prototype.beginLogin_ = function() {
+// This is just a stub for how some of the invite process will go.
+WechatSocialProvider.prototype.inviteContact_ = function(contact) {
   return new Promise(function (resolve, reject) {
-    this.client.getUUID()
-    .then(this.client.checkForScan.bind(this.client), this.client.handleError.bind(this))
-    .then(this.client.webwxnewloginpage.bind(this.client), this.client.handleError.bind(this))
+    var chatroomname = "uProxy " + this.client.contacts[contact].NickName;
+    this.client.log(1, "Social Provider: creating chatroom with name " + chatroomname);
+    var THE_INVISIBLE_CONTACT = "filehelper";
+    var list = [contact, THE_INVISIBLE_CONTACT];
+    this.client.webwxcreatechatroom(list)
+    .then(this.client.webwxbatchgetcontact.bind(this.client), this.client.handleError.bind(this.client))
+    .then(this.client.webwxupdatechatroom.bind(this.client, "modtopic", chatroomname), this.client.handleError.bind(this.client))
+    //.then(this.client.webwxupdatechatroom.bind(this.client, "delmember", arbitrarycontact), this.client.handleError.bind(this.client)) 
+    .then(function(chatroom) {
+      var invite = {
+        "type": 1,
+        "content": "Hey " + this.client.contacts[contact].NickName + "! You should use uProxy!",
+        "recipient": chatroom
+      };
+      return this.client.webwxsendmsg(invite);
+    }.bind(this), this.client.handleError.bind(this.client))
     .then(resolve, reject);
   }.bind(this));
 };
