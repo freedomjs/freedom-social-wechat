@@ -18,6 +18,9 @@ var WechatSocialProvider = function(dispatchEvent) {
 
   this.syncInterval = 4000;  // This seems like a good interval (August 1st, 2015)
 
+  this.loggedIn = null;
+  this.wxids = 0;
+
   this.initState_();
   this.initHandlers_();
 
@@ -125,6 +128,10 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     this.storage.set("WechatSocialProvider-was-QQ-user", this.client.isQQuser);
     return this.beginLogin_();
   }.bind(this);
+
+  this.client.events.onWXIDs = function(wxids) {
+
+  }.bind(this);
 };
 
 /*
@@ -145,10 +152,11 @@ WechatSocialProvider.prototype.initLogger_ = function(moduleName) {
  */
 WechatSocialProvider.prototype.login = function(loginOpts) {
   return new Promise(function(fulfillLogin, rejectLogin) {
-    this.beginLogin_()
+    this.client.preLogin(false)  // HEADSUP: for webview, set to true.
     .then(this.client.webwxinit.bind(this.client), this.client.handleError.bind(this))
     .then(function () {
-      this.client.webwxgetcontact(true).then(function() {  // TODO: T vs F
+      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
+      this.client.webwxgetcontact(true).then(function() {
         var me = this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
         this.addUserProfile_(this.client.thisUser);
         for (var friend in this.client.contacts) {
@@ -158,7 +166,6 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
         }
         fulfillLogin(me);
       }.bind(this), this.client.handleError.bind(this));
-      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
     }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
 };
