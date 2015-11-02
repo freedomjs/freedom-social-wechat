@@ -18,12 +18,9 @@ var WechatSocialProvider = function(dispatchEvent) {
 
   this.syncInterval = 4000;  // This seems like a good interval (August 1st, 2015)
 
-  this.loggedIn = null;
-  this.wxids = 0;
-
   this.initState_();
   this.initHandlers_();
-
+  
 };  // End of constructor
 
 /*
@@ -41,7 +38,7 @@ WechatSocialProvider.prototype.initState_ = function() {
 
 /*
  * Initializes event handlers
- */
+ */ 
 WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
@@ -94,7 +91,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
    * Defines how to handle the receiving of a new Icon from the WeChat webservice.
-   * @ param {Object} JSON object containing the dataURL of the QR code, and
+   * @ param {Object} JSON object containing the dataURL of the QR code, and 
    *   the HeadImgUrl of the given icon as (iconURLPath).
    */
   this.client.events.onIcon = function(iconJSON) {
@@ -106,7 +103,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
         if (friend) {
           friend.imageData = jason.dataURL;
           this.dispatchEvent_('onUserProfile', friend);
-        } else
+        } else 
           this.client.handleError("Icon corresponds to unknown contact.").bind(this);
       } catch (e) {
         this.client.handleError(e).bind(this);
@@ -116,21 +113,17 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
    * Defines the function that handles the case where the retrieved UUID corresponds
-   * to the wrong domain for this user trying to get in. Also saves which domain
+   * to the wrong domain for this user trying to get in. Also saves which domain 
    * the user was associated with for future reference.
    *
    * @param {String} referral URL address.
    * TODO: referral isn't used, consider excluding.
-   * @returns {Promise} that fulfills if restepping through the beginning of the
+   * @returns {Promise} that fulfills if restepping through the beginning of the 
    *  login process went sucessfully, rejects promise if there was an error.
-   */
+   */ 
   this.client.events.onWrongDom = function(referral) {
     this.storage.set("WechatSocialProvider-was-QQ-user", this.client.isQQuser);
     return this.beginLogin_();
-  }.bind(this);
-
-  this.client.events.onWXIDs = function(wxids) {
-
   }.bind(this);
 };
 
@@ -152,11 +145,10 @@ WechatSocialProvider.prototype.initLogger_ = function(moduleName) {
  */
 WechatSocialProvider.prototype.login = function(loginOpts) {
   return new Promise(function(fulfillLogin, rejectLogin) {
-    this.client.preLogin(false)  // HEADSUP: for webview, set to true.
+    this.beginLogin_()
     .then(this.client.webwxinit.bind(this.client), this.client.handleError.bind(this))
     .then(function () {
-      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
-      this.client.webwxgetcontact(true).then(function() {
+      this.client.webwxgetcontact(true).then(function() {  // TODO: T vs F
         var me = this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
         this.addUserProfile_(this.client.thisUser);
         for (var friend in this.client.contacts) {
@@ -166,6 +158,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
         }
         fulfillLogin(me);
       }.bind(this), this.client.handleError.bind(this));
+      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
     }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
 };
@@ -198,7 +191,7 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
       "recipient": friend
     };
     //this.client.log(3, "WechatSocialProvider sending message", msg.content);
-    this.client.webwxsendmsg(msg).then(fulfullSendMessage, rejectSendMessage);
+    this.client.webwxsendmsg(msg).then(fulfullSendMessage, rejectSendMessage); 
   }.bind(this));
 };
 
@@ -227,14 +220,14 @@ WechatSocialProvider.prototype.logout = function() {
  * @param {Object} WeChat friend JSON object.
  */
 WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
-  var userProfile = {
-    "userId": friend.NickName,
+  var userProfile = { 
+    "userId": friend.Uin || '',  // Unique identification number
     "name": friend.NickName || '',  // Their display name
     "lastUpdated": Date.now(),
     "url": friend.url || '',  // N/A
     "imageData": '' // Gets added later.
   };
-  this.userProfiles[friend.NickName] = userProfile;
+  this.userProfiles[friend.Uin] = userProfile;
   this.dispatchEvent_('onUserProfile', userProfile);
   return userProfile;
 };
@@ -254,7 +247,7 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
     state.lastSeen = Date.now();
   } else {
     state = {
-      "userId": friend.NickName,
+      "userId": friend.Uin,  // Unique identification number
       "clientId": friend.UserName,  // Session username
       "status": availability,  // All caps string saying online, offline, or online on another app.
       "lastUpdated": Date.now(),
