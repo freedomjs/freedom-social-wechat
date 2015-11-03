@@ -18,6 +18,9 @@ var WechatSocialProvider = function(dispatchEvent) {
 
   this.syncInterval = 4000;  // This seems like a good interval (August 1st, 2015)
 
+  this.loggedIn = null;
+  this.wxids = 0;
+
   this.initState_();
   this.initHandlers_();
   
@@ -123,7 +126,37 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
    */ 
   this.client.events.onWrongDom = function(referral) {
     this.storage.set("WechatSocialProvider-was-QQ-user", this.client.isQQuser);
-    return this.beginLogin_();
+    return this.preLogin(referral);
+  }.bind(this);
+
+  /**
+   *  handler for wxids -> userID
+   */
+  this.client.events.onWXIDs = function(wxids) {
+    for (var userName in wxids) {
+      console.log(userName);
+      if (userName.startsWith("@@") && this.client.chatrooms[userName]) {
+        this.client.log(1, "chatroomUser wxid found: " + this.client.chatrooms[userName].NickName);
+        this.client.chatrooms[userName].WxId = wxids[userName];
+        if (!this.userProfiles[wxids[userName]]) {
+              this.wxids++;
+        }
+        this.addUserProfile_(this.client.chatrooms[userName]);
+      } else if (!userName.startsWith("@@") && this.client.contacts[userName]){
+        this.client.log(1, "contact wxid found: " + this.client.contacts[userName].NickName);
+        this.client.contacts[userName].WxId = wxids[userName];
+        if (!this.userProfiles[wxids[userName]]) {
+              this.wxids++;
+        }
+        this.addUserProfile_(this.client.contacts[userName]);
+      }
+    }
+    var expected = Object.keys(this.client.contacts).length +
+                      Object.keys(this.client.chatrooms).length;
+    if (this.wxids === expected) {
+      this.loggedIn(this.clientStates[this.client.thisUser.UserName]);
+    }
+    this.client.log(1, "wxids");
   }.bind(this);
 };
 
@@ -145,20 +178,20 @@ WechatSocialProvider.prototype.initLogger_ = function(moduleName) {
  */
 WechatSocialProvider.prototype.login = function(loginOpts) {
   return new Promise(function(fulfillLogin, rejectLogin) {
-    this.beginLogin_()
+  this.client.preLogin(false)
     .then(this.client.webwxinit.bind(this.client), this.client.handleError.bind(this))
     .then(function () {
-      this.client.webwxgetcontact(true).then(function() {  // TODO: T vs F
-        var me = this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
+      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
+      this.client.webwxgetcontact(true).then(function() {
+        this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
         this.addUserProfile_(this.client.thisUser);
         for (var friend in this.client.contacts) {
           this.addOrUpdateClient_(this.client.contacts[friend], "ONLINE");  //FIXME
           //ONLINE_WITH_OTHER_APP will change when/if they ping back
-          this.addUserProfile_(this.client.contacts[friend]);
+          //this.addUserProfile_(this.client.contacts[friend]);
         }
-        fulfillLogin(me);
+        this.loggedIn = fulfillLogin;
       }.bind(this), this.client.handleError.bind(this));
-      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
     }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
 };
@@ -257,19 +290,6 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
   this.clientStates[friend.UserName] = state;
   this.dispatchEvent_('onClientState', this.clientStates[friend.UserName]);
   return this.clientStates[friend.UserName];
-};
-
-/*
- * Steps through the beginning parts of the WeChat login process.
- * @returns {Promise} resolves on sucessfully getting loginData, rejects otherwise.
- */
-WechatSocialProvider.prototype.beginLogin_ = function() {
-  return new Promise(function (resolve, reject) {
-    this.client.getUUID()
-    .then(this.client.checkForScan.bind(this.client), this.client.handleError.bind(this))
-    .then(this.client.webwxnewloginpage.bind(this.client), this.client.handleError.bind(this))
-    .then(resolve, reject);
-  }.bind(this));
 };
 
 // Register provider when in a module context.
