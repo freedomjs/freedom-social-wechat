@@ -3,17 +3,157 @@
   "description": "Social provider using WeChat",
   "app": {
     "script": [
-      "wechat-social-provider.static.js"
+      "wechat-social-provider.js"
    	]
   },
-  "default": "social",
+  "dependencies": {
+    "pgp-e2e": {
+      "url": "../freedom-pgp-e2e/pgpapi.json",
+      "api": "crypto"
+    }
+  },
+  "default": "social2",
   "provides": [
-    "social"
+    "social2"
   ],
+  "api": {
+    "social2": {
+      "ERRCODE": {"type": "constant", "value": {
+        "SUCCESS": "Success!",
+        "UNKNOWN": "Unknown error",
+        "OFFLINE": "User is currently offline",
+        "MALFORMEDPARAMETERS": "Parameters are malformed",
+        "LOGIN_BADCREDENTIALS": "Error authenticating with server",
+        "LOGIN_FAILEDCONNECTION": "Error connecting to server",
+        "LOGIN_ALREADYONLINE": "User is already logged in",
+        "LOGIN_OAUTHERROR": "OAuth Error",
+        "SEND_INVALIDDESTINATION": "Message sent to an invalid destination"
+      }},
+
+      "STATUS": {"type": "constant", "value": {
+        "OFFLINE": "OFFLINE",
+        "ONLINE": "ONLINE",
+        "ONLINE_WITH_OTHER_APP": "ONLINE_WITH_OTHER_APP"
+      }},
+
+      "login": {
+        "type": "method",
+        "value": [{
+          "agent": "string",
+          "version": "string",
+          "url": "string",
+          "interactive": "boolean",
+          "rememberLogin": "boolean"
+        }],
+        "ret": {
+          "userId": "string",
+          "clientId": "string",
+          "status": "string",
+          "lastUpdated": "number",
+          "lastSeen": "number"
+        },
+        "err": {
+          "errcode": "string",
+          "message": "string"
+        }
+      },
+
+      "inviteUser": {
+        "type": "method",
+        "value": ["string"],
+        "ret": "Object"
+      },
+
+      "acceptUserInvitation": {
+       "type": "method",
+        "value": ["string"]
+      },
+
+      "blockUser": {
+       "type": "method",
+        "value": [{
+          "userId": "string"
+        }]
+      },
+
+      "removeUser": {
+       "type": "method",
+        "value": [ "string"]
+      },
+
+      "clearCachedCredentials": {"type": "method", "value": []},
+
+      "getClients": {
+        "type": "method",
+        "value": [],
+        "ret": "object",
+        "err": {
+          "errcode": "string",
+          "message": "string"
+        }
+      },
+
+      "getUsers": {
+        "type": "method",
+        "value": [],
+        "ret": "object",
+        "err": {
+          "errcode": "string",
+          "message": "string"
+        }
+      },
+
+      "sendMessage": {
+        "type": "method",
+        "value": ["string", "string"],
+        "err": {
+          "errcode": "string",
+          "message": "string"
+        }
+      },
+
+      "logout": {
+        "type": "method",
+        "value": [],
+        "err": {
+          "errcode": "string",
+          "message": "string"
+        }
+      },
+
+      "onMessage": {"type": "event", "value": {
+        "from": {
+          "userId": "string",
+          "clientId": "string",
+          "status": "string",
+          "lastUpdated": "number",
+          "lastSeen": "number"
+        },
+        "message": "string"
+      }},
+
+      "onUserProfile": {"type": "event", "value": {
+        "userId": "string",
+        "lastUpdated": "number",
+        "name": "string",
+        "url": "string",
+        "imageData": "string",
+        "status": "number"
+      }},
+
+      "onClientState": {"type": "event", "value": {
+        "userId": "string",
+        "clientId": "string",
+        "status": "string",
+        "lastUpdated": "number",
+        "lastSeen": "number"
+      }}
+    }
+  },
   "permissions": [
     "core.websocket",
     "core.oauth",
-    "core.xhr",
-    "core.storage"
+    "core.storage",
+    "core.xhr"
   ]
 }
