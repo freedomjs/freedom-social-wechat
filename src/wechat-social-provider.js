@@ -133,30 +133,40 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
    *  handler for wxids -> userID
    */
   this.client.events.onWXIDs = function(wxids) {
-    for (var userName in wxids) {
-      console.log(userName);
-      if (userName.startsWith("@@") && this.client.chatrooms[userName]) {
-        this.client.log(1, "chatroomUser wxid found: " + this.client.chatrooms[userName].NickName);
-        this.client.chatrooms[userName].WxId = wxids[userName];
-        if (!this.userProfiles[wxids[userName]]) {
-              this.wxids++;
-        }
-        this.addUserProfile_(this.client.chatrooms[userName]);
-      } else if (!userName.startsWith("@@") && this.client.contacts[userName]){
-        this.client.log(1, "contact wxid found: " + this.client.contacts[userName].NickName);
-        this.client.contacts[userName].WxId = wxids[userName];
-        if (!this.userProfiles[wxids[userName]]) {
-              this.wxids++;
-        }
-        this.addUserProfile_(this.client.contacts[userName]);
-      }
-    }
     var expected = Object.keys(this.client.contacts).length +
                       Object.keys(this.client.chatrooms).length;
-    if (this.wxids === expected) {
-      this.loggedIn(this.clientStates[this.client.thisUser.UserName]);
+    if (this.wxids !== expected) {
+      for (var userName in wxids) {
+        console.log(userName);
+        if (userName.startsWith("@@") && this.client.chatrooms[userName]) {
+          this.client.log(1, "chatroomUser wxid found: " + this.client.chatrooms[userName].NickName);
+          this.client.chatrooms[userName].wxid = wxids[userName];
+          if (!this.userProfiles[wxids[userName]]) {
+                this.wxids++;
+          }
+          this.addOrUpdateClient_(this.client.chatrooms[userName], "ONLINE");  //FIXME
+          this.addUserProfile_(this.client.chatrooms[userName]);
+        } else if (!userName.startsWith("@@") && this.client.contacts[userName]){
+          this.client.log(1, "contact wxid found: " + this.client.contacts[userName].NickName);
+          this.client.contacts[userName].wxid = wxids[userName];
+          if (!this.userProfiles[wxids[userName]]) {
+                this.wxids++;
+          }
+          if (userName === this.client.thisUser.UserName) {
+            this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
+            this.addUserProfile_(this.client.thisUser);
+          } else {
+            this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE"); //FIXME
+            this.addUserProfile_(this.client.contacts[userName]);
+          }
+        }
+      }
+      if (this.wxids === expected) {
+        this.client.webwxgeticon();
+        this.loggedIn(this.clientStates[this.client.thisUser.UserName]);
+      }
+      this.client.log(1, "wxids");
     }
-    this.client.log(1, "wxids");
   }.bind(this);
 };
 
@@ -182,14 +192,7 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
     .then(this.client.webwxinit.bind(this.client), this.client.handleError.bind(this))
     .then(function () {
       setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
-      this.client.webwxgetcontact(true).then(function() {
-        this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
-        this.addUserProfile_(this.client.thisUser);
-        for (var friend in this.client.contacts) {
-          this.addOrUpdateClient_(this.client.contacts[friend], "ONLINE");  //FIXME
-          //ONLINE_WITH_OTHER_APP will change when/if they ping back
-          //this.addUserProfile_(this.client.contacts[friend]);
-        }
+      this.client.webwxgetcontact(false).then(function() {
         this.loggedIn = fulfillLogin;
       }.bind(this), this.client.handleError.bind(this));
     }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
@@ -253,14 +256,15 @@ WechatSocialProvider.prototype.logout = function() {
  * @param {Object} WeChat friend JSON object.
  */
 WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
+  var uid = friend.Uin || friend.wxid || '';
   var userProfile = { 
-    "userId": friend.Uin || '',  // Unique identification number
+    "userId": uid,  // Unique identification number
     "name": friend.NickName || '',  // Their display name
     "lastUpdated": Date.now(),
     "url": friend.url || '',  // N/A
     "imageData": '' // Gets added later.
   };
-  this.userProfiles[friend.Uin] = userProfile;
+  this.userProfiles[uid] = userProfile;
   this.dispatchEvent_('onUserProfile', userProfile);
   return userProfile;
 };
@@ -280,7 +284,7 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
     state.lastSeen = Date.now();
   } else {
     state = {
-      "userId": friend.Uin,  // Unique identification number
+      "userId": friend.Uin || friend.wxid || '',  // Unique identification number
       "clientId": friend.UserName,  // Session username
       "status": availability,  // All caps string saying online, offline, or online on another app.
       "lastUpdated": Date.now(),
