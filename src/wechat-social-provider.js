@@ -152,27 +152,31 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           if (!this.userProfiles[wxids[userName]]) {
                 this.wxids++;
           }
-          if (userName === this.client.thisUser.UserName) {
-            this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
-            this.addUserProfile_(this.client.thisUser);
-          } else {
+          if (userName !== this.client.thisUser.UserName) {
             this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE"); //FIXME
             this.addUserProfile_(this.client.contacts[userName]);
           }
+         // else {
+         //   this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
+         //   this.addUserProfile_(this.client.thisUser);
+         // }
         }
       }
       if (this.wxids === expected) {
+        this.client.low(0, "wxids fully resovled");
         this.client.webwxgeticon();
         this.loggedIn(this.clientStates[this.client.thisUser.UserName]);
+      } else {
+        this.client.log(-1, "wxids not fully resolved");
       }
-      this.client.log(1, "wxids");
     }
   }.bind(this);
 };
 
+
 /*
-* Initialize this.logger using the module name.
-*/
+ *  Initialize this.logger using the module name
+ */
 WechatSocialProvider.prototype.initLogger_ = function(moduleName) {
   this.logger = console;  // Initialize to console if it exists.
   if (typeof freedom !== 'undefined' && typeof freedom.core === 'function') {
@@ -193,6 +197,8 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
     .then(function () {
       setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
       this.client.webwxgetcontact(false).then(function() {
+        this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
+        this.addUserProfile_(this.client.thisUser);
         this.loggedIn = fulfillLogin;
       }.bind(this), this.client.handleError.bind(this));
     }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
