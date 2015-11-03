@@ -135,6 +135,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
   this.client.events.onWXIDs = function(wxids) {
     var expected = Object.keys(this.client.contacts).length +
                       Object.keys(this.client.chatrooms).length;
+    var selfContact = this.client.thisUser.UserName;
     if (this.wxids !== expected) {
       for (var userName in wxids) {
         console.log(userName);
@@ -163,9 +164,9 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
         }
       }
       if (this.wxids === expected) {
-        this.client.low(0, "wxids fully resovled");
+        this.client.log(0, "wxids fully resovled");
         this.client.webwxgeticon();
-        this.loggedIn(this.clientStates[this.client.thisUser.UserName]);
+        this.loggedIn(this.clientStates[selfContact]);
       } else {
         this.client.log(-1, "wxids not fully resolved");
       }
