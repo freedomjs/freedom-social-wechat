@@ -75,7 +75,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
         this.storage.get("invited_" + this.client.thisUser.Uin)
         .then(function(invites) {
           var iContact = invites[fromUserId];
-          if (iContact.timestamp > jason.timestamp) {
+          if (iContact.timestamp < jason.timestamp) {
             resolve(true);  // If timestamp of my invite sent before theirs, I create chatroom
           } else {
             resolve(false);
@@ -95,7 +95,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
             //.then(this.client.webwxupdatechatroom.bind(this.client, "delmember", arbitrarycontact), this.client.handleError.bind(this.client)) 
             .then(function(chatroom) {
               var hey = "Hey, " + this.client.contacts[contact].NickName + "! We're now friends ";
-              hey += "in uProxy! I made this group between us so we can use uProxy privately.";
+              hey += "on uProxy! I made this group between us so we can use uProxy privately.";
               var welcome = {
                 "type": 1,
                 "content": hey,
@@ -104,8 +104,10 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
               delete this.inviteds[fromUserId];
               this.storage.set("invited_" + this.client.thisUser.Uin, this.inviteds);
               return this.client.webwxsendmsg(welcome);
-            }.bind(this), this.client.handleError.bind(this.client))
-            .then(resolve, reject);
+            }.bind(this), this.client.handleError.bind(this.client));
+          } else {
+            delete this.inviteds[fromUserId];
+            this.storage.set("invited_" + this.client.thisUser.Uin, this.inviteds);
           }
         }.bind(this), this.client.handleError.bind(this.client));
       }
@@ -114,6 +116,24 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     }
     this.client.log(5, eventMessage.message, -1);
     this.dispatchEvent_("onMessage", eventMessage);
+  }.bind(this);
+
+  /*
+   *  Updates clientStates and userProfiles using the information of a modified chatroom.
+   *  @param {Object} — modified chatroom from this.client.webwxsync
+   */
+  this.client.events.onModChatroom = function(modChatroom) {
+    this.addOrUpdateClient_(modChatroom);
+    //for (var i = 0; i < modChatroom.MemberCount; i++) {
+    //  var member = modChatroom.MemberList[i];
+    //  var clientId = member.UserName;
+    //  if (member.wxid && !this.clientStates[clientId].userId) {
+    //    this.client.log(1, "contact Uin discovered: " + member.NickName + " => " + member.wxid);
+    //    this.clientStates[clientId].userId = member.wxid;
+    //    this.dispatchEvent_("onClientState", this.clientStates[clientId]);
+    //    this.addUserProfile_(member);
+    //  }
+    //}
   }.bind(this);
 
   /*
@@ -198,7 +218,6 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           if (this.client.chatrooms[userName].NickName.startsWith(this.CONTACT_NAME_SCHEME)) {
             this.addOrUpdateClient_(this.client.chatrooms[userName], "ONLINE");  //FIXME
           }
-          this.addUserProfile_(this.client.chatrooms[userName]);
         } else if (!userName.startsWith("@@") && this.client.contacts[userName]){
           this.client.log(1, "contact wxid found: " + this.client.contacts[userName].NickName);
           this.client.contacts[userName].wxid = wxids[userName];
@@ -348,13 +367,27 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
     state.lastUpdated = Date.now();
     state.lastSeen = Date.now();
   } else {
-    state = {
-      "userId": friend.Uin || friend.wxid || '',  // Unique identification number
-      "clientId": friend.UserName,  // Session username
-      "status": availability,  // All caps string saying online, offline, or online on another app.
-      "lastUpdated": Date.now(),
-      "lastSeen": Date.now()
-    };
+    if (friend.MemberCount === 2) {
+      for (var member in friend.MemberList) {
+        if (member.UserName !== this.client.thisUser.UserName) {
+          state = {
+            "userId": member.Uin || member.wxid || '',  // Unique identification number
+            "clientId": member.UserName,  // Session username
+            "status": availability,  // All caps string saying online, offline, or online on another app.
+            "lastUpdated": Date.now(),
+            "lastSeen": Date.now()
+          };
+        }
+      }
+    } else if (friend.MemberCount === 0) {
+      state = {
+        "userId": friend.Uin || friend.wxid || '',  // Unique identification number
+        "clientId": friend.UserName,  // Session username
+        "status": availability,  // All caps string saying online, offline, or online on another app.
+        "lastUpdated": Date.now(),
+        "lastSeen": Date.now()
+      };
+    }
   }
   this.clientStates[friend.UserName] = state;
   this.dispatchEvent_('onClientState', this.clientStates[friend.UserName]);
