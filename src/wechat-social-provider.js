@@ -21,6 +21,10 @@ var WechatSocialProvider = function(dispatchEvent) {
   this.loggedIn = null;
   this.wxids = 0;
 
+  this.CONTACT_NAME_SCHEME = "uProxy_"; // + user1 / user2
+  
+  this.inviteds = {}; // wxid => invite mapping
+
   this.initState_();
   this.initHandlers_();
   
@@ -53,9 +57,11 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     if (message.MsgType === this.client.HIDDENMSGTYPE) {
       availability = "ONLINE";
     }
+    var fromUser = this.client.contacts[message.FromUserName];
+    var fromUserId = this.userProfiles[fromUser.Uin || fromUser.wxid];
     var eventMessage = {
       "from": {
-        "userId": this.clientStates[message.FromUserName].userId,
+        "userId": fromUserId,
         "clientId": message.FromUserName,
         "status": availability,
         "lastUpdated": Date.now(),
@@ -63,6 +69,49 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
       },
       "message": message.Content
     };
+    try {
+      var jason = JSON.parse(message.Content);
+      if (jason.userStatus === 0) {
+        this.storage.get("invited_" + this.client.thisUser.Uin)
+        .then(function(invites) {
+          var iContact = invites[fromUserId];
+          if (iContact.timestamp > jason.timestamp) {
+            resolve(true);  // If timestamp of my invite sent before theirs, I create chatroom
+          } else {
+            resolve(false);
+          }
+        }.bind(this), this.client.handleError.bind(this.client))
+        .then(function(chatroomCreater) {
+          if (chatroomCreater) {
+            var chatroomname = this.CONTACT_NAME_SCHEME + this.client.contacts[contact].NickName; // FIXME, better naming scheme
+            this.client.log(1, "Social Provider: creating chatroom with name " + chatroomname);
+            var THE_INVISIBLE_CONTACT = "filehelper";
+            var list = [contact, THE_INVISIBLE_CONTACT];
+            this.client.webwxcreatechatroom(list)
+            .then(this.client.webwxbatchgetcontact.bind(this.client),
+                      this.client.handleError.bind(this.client))
+            .then(this.client.webwxupdatechatroom.bind(this.client, "modtopic", chatroomname),
+                      this.client.handleError.bind(this.client))
+            //.then(this.client.webwxupdatechatroom.bind(this.client, "delmember", arbitrarycontact), this.client.handleError.bind(this.client)) 
+            .then(function(chatroom) {
+              var hey = "Hey, " + this.client.contacts[contact].NickName + "! We're now friends ";
+              hey += "in uProxy! I made this group between us so we can use uProxy privately.";
+              var welcome = {
+                "type": 1,
+                "content": hey,
+                "recipient": chatroom
+              };
+              delete this.inviteds[fromUserId];
+              this.storage.set("invited_" + this.client.thisUser.Uin, this.inviteds);
+              return this.client.webwxsendmsg(welcome);
+            }.bind(this), this.client.handleError.bind(this.client))
+            .then(resolve, reject);
+          }
+        }.bind(this), this.client.handleError.bind(this.client));
+      }
+    } catch(e) {
+      console.error(e); // don't want to kill uProxy, just means we haven't gotten an invite message
+    }
     this.client.log(5, eventMessage.message, -1);
     this.dispatchEvent_("onMessage", eventMessage);
   }.bind(this);
@@ -101,8 +150,9 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     if (iconJSON) {
       try {
         var jason = JSON.parse(iconJSON);
-        var clientId = jason.iconURLPath.split("?")[1].split("&")[1].split("=")[1];
-        var friend = this.userProfiles[this.clientStates[clientId].userId];
+        var userName = jason.iconURLPath.split("?")[1].split("&")[1].split("=")[1];
+        var user = this.client.contacts[userName];
+        var friend = this.userProfiles[user.Uin || user.wxid];
         if (friend) {
           friend.imageData = jason.dataURL;
           this.dispatchEvent_('onUserProfile', friend);
@@ -143,18 +193,20 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           this.client.log(1, "chatroomUser wxid found: " + this.client.chatrooms[userName].NickName);
           this.client.chatrooms[userName].wxid = wxids[userName];
           if (!this.userProfiles[wxids[userName]]) {
-                this.wxids++;
+            this.wxids++;
           }
-          this.addOrUpdateClient_(this.client.chatrooms[userName], "ONLINE");  //FIXME
+          if (this.client.chatrooms[userName].NickName.startsWith(this.CONTACT_NAME_SCHEME)) {
+            this.addOrUpdateClient_(this.client.chatrooms[userName], "ONLINE");  //FIXME
+          }
           this.addUserProfile_(this.client.chatrooms[userName]);
         } else if (!userName.startsWith("@@") && this.client.contacts[userName]){
           this.client.log(1, "contact wxid found: " + this.client.contacts[userName].NickName);
           this.client.contacts[userName].wxid = wxids[userName];
           if (!this.userProfiles[wxids[userName]]) {
-                this.wxids++;
+            this.wxids++;
           }
           if (userName !== this.client.thisUser.UserName) {
-            this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE"); //FIXME
+            //this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE"); //FIXME
             this.addUserProfile_(this.client.contacts[userName]);
           }
          // else {
@@ -166,6 +218,12 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
       if (this.wxids === expected) {
         this.client.log(0, "wxids fully resovled");
         this.client.webwxgeticon();
+        this.storage.get("invited_" + this.client.thisUser.Uin)
+        .then(function(invites) {
+          for (var invite in invites) {
+            this.client.webwxsendmsg(invite);
+          }
+        }.bind(this), this.client.handleError.bind(this.client));
         this.loggedIn(this.clientStates[selfContact]);
       } else {
         this.client.log(-1, "wxids not fully resolved");
@@ -301,6 +359,37 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
   this.clientStates[friend.UserName] = state;
   this.dispatchEvent_('onClientState', this.clientStates[friend.UserName]);
   return this.clientStates[friend.UserName];
+};
+
+/**
+ *  Included to conform with API; is a noop function in this context
+ */
+WechatSocialProvider.prototype.acceptUserInvitation = function(invite) {
+  return Promise.reject(); // this shall just do nothing.
+};
+
+// This is just a stub for how some of the invite process will go.
+WechatSocialProvider.prototype.inviteUser = function(contact) {
+  return new Promise(function (resolve, reject) {
+    var uProxy_info = JSON.stringify({
+      "userStatus": 0, // friend request
+      "timestamp": Date.now()
+    });
+    var uProxy_invite = {
+      "type": this.client.HIDDENMSGTYPE,
+      "content": uProxy_info,
+      "recipient": contact.UserName
+    };
+    this.inviteds[contact.wxid] = uProxy_invite;
+    var plaintext_invite = {
+        "type": 1,
+        "content": "Hey " + this.client.contacts[contact].NickName + "! You should use uProxy!", // FIXME
+        "recipient": contact.UserName
+    };
+    this.client.webwxsendmsg(uProxy_invite);
+    this.client.webwxsendmsg(plaintext_invite);
+    this.storage.set("invited_" + this.client.thisUser.Uin, this.inviteds);
+  }.bind(this));
 };
 
 // Register provider when in a module context.
