@@ -3,8 +3,8 @@
   "description": "Social provider using WeChat",
   "app": {
     "script": [
-      "wechat-social-provider.js"
-   	]
+      "wechat-social-provider.static.js"
+    ]
   },
   "dependencies": {
     "pgp-e2e": {

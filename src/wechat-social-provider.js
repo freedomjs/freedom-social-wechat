@@ -22,12 +22,15 @@ var WechatSocialProvider = function(dispatchEvent) {
   this.wxids = 0;
 
   this.CONTACT_NAME_SCHEME = "uProxy_"; // + user1 / user2
-  
+
   this.inviteds = {}; // wxid => invite mapping
 
   this.initState_();
   this.initHandlers_();
-  
+
+
+  this.wxidToUsernameMap = {};
+
 };  // End of constructor
 
 /*
@@ -45,7 +48,7 @@ WechatSocialProvider.prototype.initState_ = function() {
 
 /*
  * Initializes event handlers
- */ 
+ */
 WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
@@ -61,7 +64,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     var fromUserId = this.userProfiles[fromUser.Uin || fromUser.wxid];
     var eventMessage = {
       "from": {
-        "userId": fromUserId,
+        "userId": fromUser.wxid,
         "clientId": message.FromUserName,
         "status": availability,
         "lastUpdated": Date.now(),
@@ -72,6 +75,33 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     try {
       var jason = JSON.parse(message.Content);
       if (jason.userStatus === 0) {
+
+        for (var i in this.wxidToUsernameMap) {
+          if (this.wxidToUsernameMap[i] == message.FromUserName) {
+            console.log(this.inviteds[i]);
+            if (this.inviteds[i]) {
+              var state = this.clientStates[message.FromUserName];
+              if (state) {
+                state.status = "ONLINE";
+                state.lastUpdated = Date.now();
+                state.lastSeen = Date.now();
+              } else {
+                state = {
+                  "userId": i,  // Unique identification number
+                  "clientId": message.FromUserName,  // Session username
+                  "status": "ONLINE",  // All caps string saying online, offline, or online on another app.
+                  "lastUpdated": Date.now(),
+                  "lastSeen": Date.now()
+                };
+              }
+              this.clientStates[message.FromUserName] = state;
+              this.dispatchEvent_('onClientState', this.clientStates[message.FromUserName]);
+              return;
+            }
+          }
+        }
+
+
         this.storage.get("invited_" + this.client.thisUser.Uin)
         .then(function(invites) {
           var iContact = invites[fromUserId];
@@ -92,7 +122,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
                       this.client.handleError.bind(this.client))
             .then(this.client.webwxupdatechatroom.bind(this.client, "modtopic", chatroomname),
                       this.client.handleError.bind(this.client))
-            //.then(this.client.webwxupdatechatroom.bind(this.client, "delmember", arbitrarycontact), this.client.handleError.bind(this.client)) 
+            //.then(this.client.webwxupdatechatroom.bind(this.client, "delmember", arbitrarycontact), this.client.handleError.bind(this.client))
             .then(function(chatroom) {
               var hey = "Hey, " + this.client.contacts[contact].NickName + "! We're now friends ";
               hey += "on uProxy! I made this group between us so we can use uProxy privately.";
@@ -163,7 +193,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
    * Defines how to handle the receiving of a new Icon from the WeChat webservice.
-   * @ param {Object} JSON object containing the dataURL of the QR code, and 
+   * @ param {Object} JSON object containing the dataURL of the QR code, and
    *   the HeadImgUrl of the given icon as (iconURLPath).
    */
   this.client.events.onIcon = function(iconJSON) {
@@ -176,7 +206,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
         if (friend) {
           friend.imageData = jason.dataURL;
           this.dispatchEvent_('onUserProfile', friend);
-        } else 
+        } else
           this.client.handleError("Icon corresponds to unknown contact.").bind(this);
       } catch (e) {
         this.client.handleError(e).bind(this);
@@ -186,14 +216,14 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
    * Defines the function that handles the case where the retrieved UUID corresponds
-   * to the wrong domain for this user trying to get in. Also saves which domain 
+   * to the wrong domain for this user trying to get in. Also saves which domain
    * the user was associated with for future reference.
    *
    * @param {String} referral URL address.
    * TODO: referral isn't used, consider excluding.
-   * @returns {Promise} that fulfills if restepping through the beginning of the 
+   * @returns {Promise} that fulfills if restepping through the beginning of the
    *  login process went sucessfully, rejects promise if there was an error.
-   */ 
+   */
   this.client.events.onWrongDom = function(referral) {
     this.storage.set("WechatSocialProvider-was-QQ-user", this.client.isQQuser);
     return this.preLogin(referral);
@@ -208,6 +238,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
     var selfContact = this.client.thisUser.UserName;
     if (this.wxids !== expected) {
       for (var userName in wxids) {
+        this.wxidToUsernameMap[wxids[userName]] = userName;
         console.log(userName);
         if (userName.startsWith("@@") && this.client.chatrooms[userName]) {
           this.client.log(1, "chatroomUser wxid found: " + this.client.chatrooms[userName].NickName);
@@ -311,7 +342,7 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
       "recipient": friend
     };
     //this.client.log(3, "WechatSocialProvider sending message", msg.content);
-    this.client.webwxsendmsg(msg).then(fulfullSendMessage, rejectSendMessage); 
+    this.client.webwxsendmsg(msg).then(fulfullSendMessage, rejectSendMessage);
   }.bind(this));
 };
 
@@ -341,7 +372,7 @@ WechatSocialProvider.prototype.logout = function() {
  */
 WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
   var uid = friend.Uin || friend.wxid || '';
-  var userProfile = { 
+  var userProfile = {
     "userId": uid,  // Unique identification number
     "name": friend.NickName || '',  // Their display name
     "lastUpdated": Date.now(),
@@ -367,27 +398,13 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
     state.lastUpdated = Date.now();
     state.lastSeen = Date.now();
   } else {
-    if (friend.MemberCount === 2) {
-      for (var member in friend.MemberList) {
-        if (member.UserName !== this.client.thisUser.UserName) {
-          state = {
-            "userId": member.Uin || member.wxid || '',  // Unique identification number
-            "clientId": member.UserName,  // Session username
-            "status": availability,  // All caps string saying online, offline, or online on another app.
-            "lastUpdated": Date.now(),
-            "lastSeen": Date.now()
-          };
-        }
-      }
-    } else if (friend.MemberCount === 0) {
-      state = {
-        "userId": friend.Uin || friend.wxid || '',  // Unique identification number
-        "clientId": friend.UserName,  // Session username
-        "status": availability,  // All caps string saying online, offline, or online on another app.
-        "lastUpdated": Date.now(),
-        "lastSeen": Date.now()
-      };
-    }
+    state = {
+      "userId": friend.Uin || friend.wxid || '',  // Unique identification number
+      "clientId": friend.UserName,  // Session username
+      "status": availability,  // All caps string saying online, offline, or online on another app.
+      "lastUpdated": Date.now(),
+      "lastSeen": Date.now()
+    };
   }
   this.clientStates[friend.UserName] = state;
   this.dispatchEvent_('onClientState', this.clientStates[friend.UserName]);
@@ -403,6 +420,7 @@ WechatSocialProvider.prototype.acceptUserInvitation = function(invite) {
 
 // This is just a stub for how some of the invite process will go.
 WechatSocialProvider.prototype.inviteUser = function(contact) {
+  console.log(contact);
   return new Promise(function (resolve, reject) {
     var uProxy_info = JSON.stringify({
       "userStatus": 0, // friend request
@@ -411,13 +429,13 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
     var uProxy_invite = {
       "type": this.client.HIDDENMSGTYPE,
       "content": uProxy_info,
-      "recipient": contact.UserName
+      "recipient": this.wxidToUsernameMap[contact]
     };
-    this.inviteds[contact.wxid] = uProxy_invite;
+    this.inviteds[contact] = uProxy_invite;
     var plaintext_invite = {
         "type": 1,
-        "content": "Hey " + this.client.contacts[contact].NickName + "! You should use uProxy!", // FIXME
-        "recipient": contact.UserName
+        "content": "Join me on uProxy!", //"Hey " + this.client.contacts[contact].NickName + "! You should use uProxy!", // FIXME
+        "recipient": this.wxidToUsernameMap[contact]
     };
     this.client.webwxsendmsg(uProxy_invite);
     this.client.webwxsendmsg(plaintext_invite);
