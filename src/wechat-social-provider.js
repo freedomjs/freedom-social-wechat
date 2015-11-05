@@ -102,6 +102,8 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
         }
 
 
+
+
         this.storage.get("invited_" + this.client.thisUser.Uin)
         .then(function(invites) {
           var iContact = invites[fromUserId];
@@ -139,10 +141,13 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
             delete this.inviteds[fromUserId];
             this.storage.set("invited_" + this.client.thisUser.Uin, this.inviteds);
           }
+
         }.bind(this), this.client.handleError.bind(this.client));
+        return;
       }
     } catch(e) {
-      console.error(e); // don't want to kill uProxy, just means we haven't gotten an invite message
+      //console.error(e);
+      return; // don't want to kill uProxy, just means we haven't gotten an invite message
     }
     this.client.log(5, eventMessage.message, -1);
     this.dispatchEvent_("onMessage", eventMessage);
