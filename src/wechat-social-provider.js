@@ -59,10 +59,10 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
    * @param {Object} message
    */
   this.client.events.onMessage = function(message) {
-    var availability = "ONLINE_WITH_OTHER_APP";
-    if (message.MsgType === this.client.HIDDENMSGTYPE) {
-      availability = "ONLINE";
-    }
+    var availability = "ONLINE";
+    // if (message.MsgType === this.client.HIDDENMSGTYPE) {
+    //   availability = "ONLINE";
+    // }
     var fromUser = this.client.contacts[message.FromUserName];
     var fromUserId = this.userProfiles[fromUser.Uin || fromUser.wxid];
     var eventMessage = {
