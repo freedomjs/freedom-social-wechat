@@ -59,10 +59,11 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
    * @param {Object} message
    */
   this.client.events.onMessage = function(message) {
-    var availability = "ONLINE";
-    // if (message.MsgType === this.client.HIDDENMSGTYPE) {
-    //   availability = "ONLINE";
+    // Uncomment below when hidden messages can be sent/received reliably.
+    // if (message.MsgType !== this.client.HIDDENMSGTYPE) {
+    //   return; // No need to consider non-uProxy messages.
     // }
+    var availability = "ONLINE";
     var fromUser = this.client.contacts[message.FromUserName];
     var fromUserId = this.userProfiles[fromUser.Uin || fromUser.wxid];
     var eventMessage = {
@@ -375,6 +376,11 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
   console.log(contact);
   return new Promise(function (resolve, reject) {
     var invisible_invite = this.createInvisibleInvite(MESSAGE_TYPE.INVITE, contact);
+    if (this.received[contact]) {
+      this.addOrUpdateClient_({UserName: this.wxidToUsernameMap[contact], wxid: contact}, "ONLINE");
+      this.client.webwxsendmsg(invisible_invite);
+      return;
+    }
     var plaintext_invite = {
         "type": 1,
         "content": "Join me on uProxy!", //"Hey " + this.client.contacts[contact].NickName + "! You should use uProxy!", // FIXME
@@ -382,7 +388,6 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
     };
     this.client.webwxsendmsg(invisible_invite);
     this.client.webwxsendmsg(plaintext_invite);
-    this.storage.set("invited_" + this.client.thisUser.Uin, JSON.stringify(this.inviteds));
   }.bind(this));
 };
 
@@ -398,6 +403,7 @@ WechatSocialProvider.prototype.createInvisibleInvite = function(messageType, rec
     "recipient": this.wxidToUsernameMap[recipientWxid]
   };
   this.inviteds[recipientWxid] = timestamp;
+  this.storage.set("invited_" + this.client.thisUser.Uin, JSON.stringify(this.inviteds));
   return invite;
 };
 
