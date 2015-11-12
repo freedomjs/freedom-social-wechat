@@ -28,8 +28,8 @@ var WechatSocialProvider = function(dispatchEvent) {
 
   this.CONTACT_NAME_SCHEME = "uProxy_"; // + user1 / user2
 
-  this.inviteds = {}; // wxid => invite timestamp mapping
-  this.received = {}; // wxid => received invite timestamp mapping
+  this.invitesSent = {}; // wxid => invite timestamp mapping
+  this.invitesReceived = {}; // wxid => received invite timestamp mapping
 
   this.initState_();
   this.initHandlers_();
@@ -81,10 +81,10 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
       if (jason.userStatus === MESSAGE_TYPE.INVITE ||
           jason.userStatus === MESSAGE_TYPE.RETURN_INVITE) {
         var wxidOfInvite = this.client.contacts[message.FromUserName].wxid;
-        this.received[wxidOfInvite] = jason.timestamp;
-        this.storage.set("received_" + this.client.thisUser.Uin, JSON.stringify(this.received));
+        this.invitesReceived[wxidOfInvite] = jason.timestamp;
+        this.storage.set("received_" + this.client.thisUser.Uin, JSON.stringify(this.invitesReceived));
 
-        if (this.inviteds[wxidOfInvite]) {
+        if (this.invitesSent[wxidOfInvite]) {
           this.addOrUpdateClient_(this.client.contacts[message.FromUserName], 'ONLINE');
           if (jason.userStatus === MESSAGE_TYPE.INVITE) {
             var returnInvite = this.createInvisibleInvite(
@@ -202,7 +202,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           if (userName !== this.client.thisUser.UserName) {
             this.addUserProfile_(this.client.contacts[userName]);
           }
-          // if (this.inviteds[wxid] && this.received[wxid]) {
+          // if (this.invitesSent[wxid] && this.invitesReceived[wxid]) {
           //   this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
           // }
         }
@@ -210,8 +210,8 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
       if (this.wxids === expected) {
         this.client.log(0, "wxids fully resovled");
         this.client.webwxgeticon();
-        for (var invitedWxid in this.inviteds) {
-          if (!this.received[invitedWxid]) {
+        for (var invitedWxid in this.invitesSent) {
+          if (!this.invitesReceived[invitedWxid]) {
             var invite = this.createInvisibleInvite(MESSAGE_TYPE.INVITE, invitedWxid);
             this.client.webwxsendmsg(invite);
           } else {
@@ -251,11 +251,11 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
       this.storage.get("invited_" + this.client.thisUser.Uin)
           .then(function(invitesString) {
         var invites = JSON.parse(invitesString);
-        this.inviteds = invites || {};
+        this.invitesSent = invites || {};
         this.storage.get("received_" + this.client.thisUser.Uin)
             .then(function(receivedString) {
           var received = JSON.parse(receivedString);
-          this.received = received || {};
+          this.invitesReceived = received || {};
         }.bind(this), this.client.handleError.bind(this.client));
       }.bind(this), this.client.handleError.bind(this.client));
       this.client.webwxgetcontact(false).then(function() {
@@ -376,7 +376,7 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
   console.log(contact);
   return new Promise(function (resolve, reject) {
     var invisible_invite = this.createInvisibleInvite(MESSAGE_TYPE.INVITE, contact);
-    if (this.received[contact]) {
+    if (this.invitesReceived[contact]) {
       this.addOrUpdateClient_({UserName: this.wxidToUsernameMap[contact], wxid: contact}, "ONLINE");
       this.client.webwxsendmsg(invisible_invite);
       return;
@@ -392,7 +392,7 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
 };
 
 WechatSocialProvider.prototype.createInvisibleInvite = function(messageType, recipientWxid) {
-  var timestamp = this.inviteds[recipientWxid] || Date.now();
+  var timestamp = this.invitesSent[recipientWxid] || Date.now();
   var uProxy_info = JSON.stringify({
     "userStatus": messageType,
     "timestamp": timestamp
@@ -402,8 +402,8 @@ WechatSocialProvider.prototype.createInvisibleInvite = function(messageType, rec
     "content": uProxy_info,
     "recipient": this.wxidToUsernameMap[recipientWxid]
   };
-  this.inviteds[recipientWxid] = timestamp;
-  this.storage.set("invited_" + this.client.thisUser.Uin, JSON.stringify(this.inviteds));
+  this.invitesSent[recipientWxid] = timestamp;
+  this.storage.set("invited_" + this.client.thisUser.Uin, JSON.stringify(this.invitesSent));
   return invite;
 };
 
