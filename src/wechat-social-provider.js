@@ -373,7 +373,6 @@ WechatSocialProvider.prototype.acceptUserInvitation = function(invite) {
 
 // This is just a stub for how some of the invite process will go.
 WechatSocialProvider.prototype.inviteUser = function(contact) {
-  console.log(contact);
   return new Promise(function (resolve, reject) {
     var invisible_invite = this.createInvisibleInvite(MESSAGE_TYPE.INVITE, contact);
     if (this.invitesReceived[contact]) {
@@ -381,9 +380,14 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
       this.client.webwxsendmsg(invisible_invite);
       return;
     }
+    var friendName = "friend";
+    if (this.client.contacts[this.wxidToUsernameMap[contact]] &&
+        this.client.contacts[this.wxidToUsernameMap[contact]].NickName) {
+      friendName = this.client.contacts[this.wxidToUsernameMap[contact]].NickName;
+    }
     var plaintext_invite = {
         "type": 1,
-        "content": "Join me on uProxy!", //"Hey " + this.client.contacts[contact].NickName + "! You should use uProxy!", // FIXME
+        "content": "Hi " + friendName + "! I'd like to use uProxy with you. You can find more information at www.uproxy.org, or ask me about it!",
         "recipient": this.wxidToUsernameMap[contact]
     };
     this.client.webwxsendmsg(invisible_invite);
