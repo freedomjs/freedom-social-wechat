@@ -20,9 +20,12 @@ var WechatSocialProvider = function(dispatchEvent) {
   this.syncInterval = 4000;  // This seems like a good interval (August 1st, 2015)
   this.wxidsResolved = false;
 
+  this.loggedIn = null;
+  this.wxids = 0;
+
   this.initState_();
   this.initHandlers_();
-
+  
 };  // End of constructor
 
 /*
@@ -40,7 +43,7 @@ WechatSocialProvider.prototype.initState_ = function() {
 
 /*
  * Initializes event handlers
- */
+ */ 
 WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
@@ -110,7 +113,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
    * Defines how to handle the receiving of a new Icon from the WeChat webservice.
-   * @ param {Object} JSON object containing the dataURL of the QR code, and
+   * @ param {Object} JSON object containing the dataURL of the QR code, and 
    *   the HeadImgUrl of the given icon as (iconURLPath).
    */
   this.client.events.onIcon = function(iconJSON) {
@@ -124,7 +127,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           friend.imageData = jason.dataURL;
           this.client.log(-1, "iconUserId: " + friend.userId);
           this.dispatchEvent_('onUserProfile', friend);
-        } else
+        } else 
           this.client.handleError("Icon corresponds to unknown contact.").bind(this);
       } catch (e) {
         this.client.handleError(e).bind(this);
@@ -166,7 +169,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
 
   /*
    * Defines the function that handles the case where the retrieved UUID corresponds
-   * to the wrong domain for this user trying to get in. Also saves which domain
+   * to the wrong domain for this user trying to get in. Also saves which domain 
    * the user was associated with for future reference.
    *
    * @param {Boolean} whether we should download the QR code for login.
@@ -176,6 +179,45 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
   this.client.events.onWrongDom = function(shouldDownloadQR) {
     this.storage.set("WechatSocialProvider-was-QQ-user", this.client.isQQuser);
     return this.client.prelogin(shouldDownloadQR);
+
+  /**
+   *  handler for wxids -> userID
+   */
+  this.client.events.onWXIDs = function(wxids) {
+    var expected = Object.keys(this.client.contacts).length +
+                      Object.keys(this.client.chatrooms).length;
+    if (this.wxids !== expected) {
+      for (var userName in wxids) {
+        console.log(userName);
+        if (userName.startsWith("@@") && this.client.chatrooms[userName]) {
+          this.client.log(1, "chatroomUser wxid found: " + this.client.chatrooms[userName].NickName);
+          this.client.chatrooms[userName].wxid = wxids[userName];
+          if (!this.userProfiles[wxids[userName]]) {
+                this.wxids++;
+          }
+          this.addOrUpdateClient_(this.client.chatrooms[userName], "ONLINE");  //FIXME
+          this.addUserProfile_(this.client.chatrooms[userName]);
+        } else if (!userName.startsWith("@@") && this.client.contacts[userName]){
+          this.client.log(1, "contact wxid found: " + this.client.contacts[userName].NickName);
+          this.client.contacts[userName].wxid = wxids[userName];
+          if (!this.userProfiles[wxids[userName]]) {
+                this.wxids++;
+          }
+          if (userName === this.client.thisUser.UserName) {
+            this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
+            this.addUserProfile_(this.client.thisUser);
+          } else {
+            this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE"); //FIXME
+            this.addUserProfile_(this.client.contacts[userName]);
+          }
+        }
+      }
+      if (this.wxids === expected) {
+        this.client.webwxgeticon();
+        this.loggedIn(this.clientStates[this.client.thisUser.UserName]);
+      }
+      this.client.log(1, "wxids");
+    }
   }.bind(this);
 };
 
@@ -212,21 +254,14 @@ WechatSocialProvider.prototype.wxidHelper_ = function() {
  */
 WechatSocialProvider.prototype.login = function(loginOpts) {
   return new Promise(function(fulfillLogin, rejectLogin) {
-    this.client.login(false, false)
-    .then(function() {
-      this.addOrUpdateClient_(this.client.thisUser, "ONLINE")
-      .then(function(me) {
-        this.client.log(-1, "thisUserProfileId: " + me.userId);
-        this.addUserProfile_(this.client.thisUser);
-        fulfillLogin(me);
+  this.client.preLogin(false)
+    .then(this.client.webwxinit.bind(this.client), this.client.handleError.bind(this))
+    .then(function () {
+      setTimeout(this.client.synccheck.bind(this.client), this.syncInterval);
+      this.client.webwxgetcontact(false).then(function() {
+        this.loggedIn = fulfillLogin;
       }.bind(this), this.client.handleError.bind(this));
-      //for (var friend in this.client.contacts) {
-      //  // assuming that the user is logged in on some device since most people wouldn't log out
-      //  // of wechat on their phone. ONLINE_WITH_OTHER_APP will change if they login to uProxy.
-      //  this.addOrUpdateClient_(this.client.contacts[friend], "ONLINE_WITH_OTHER_APP");
-      //  this.addUserProfile_(this.client.contacts[friend]);
-      //}
-    }.bind(this), this.client.handleError.bind(this));
+    }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
 };
 
@@ -258,7 +293,7 @@ WechatSocialProvider.prototype.sendMessage = function(friend, message) {
       "recipient": friend
     };
     //this.client.log(3, "WechatSocialProvider sending message", msg.content);
-    this.client.webwxsendmsg(msg).then(fulfullSendMessage, rejectSendMessage);
+    this.client.webwxsendmsg(msg).then(fulfullSendMessage, rejectSendMessage); 
   }.bind(this));
 };
 
@@ -287,14 +322,15 @@ WechatSocialProvider.prototype.logout = function() {
  * @param {Object} WeChat friend JSON object.
  */
 WechatSocialProvider.prototype.addUserProfile_ = function(friend) {
-  var userProfile = {
-    "userId": friend.Uin || friend.WxId,
+  var uid = friend.Uin || friend.wxid || '';
+  var userProfile = { 
+    "userId": uid,  // Unique identification number
     "name": friend.NickName || '',  // Their display name
     "lastUpdated": Date.now(),
     "url": friend.url || '',  // N/A
     "imageData": '' // Gets added later.
   };
-  this.userProfiles[userProfile.userId] = userProfile;
+  this.userProfiles[uid] = userProfile;
   this.dispatchEvent_('onUserProfile', userProfile);
   return userProfile;
 };
@@ -311,28 +347,21 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
     try {
       var state = this.clientStates[friend.UserName];
       if (state) {
-        if (!state.userId) {
-          state.userId = friend.Uin || friend.WxId;
-        }
         state.status = availability;
         state.lastUpdated = Date.now();
         state.lastSeen = Date.now();
       } else {
         state = {
-          "userId":  friend.Uin || friend.WxId,
+          "userId": friend.Uin || friend.wxid || '',  // Unique identification number
           "clientId": friend.UserName,  // Session username
           "status": availability,  // All caps string saying online, offline, or online on another app.
+          "lastUpdated": Date.now(),
+          "lastSeen": Date.now()
         };
-        if (this.version === 2) {
-          state.timestamp = Date.now();
-        } else {
-          state.lastUpdated = Date.now();
-          state.lastSeen = Date.now();
-        }
       }
-      this.clientStates[state.clientId] = state;
-      this.dispatchEvent_('onClientState', this.clientStates[state.clientId]);
-      resolve(this.clientStates[state.clientId]);
+      this.clientStates[friend.UserName] = state;
+      this.dispatchEvent_('onClientState', this.clientStates[friend.UserName]);
+      resolve(this.clientStates[friend.UserName]);
     } catch(e) {
       reject();
       this.client.handleError(e).bind(this);
