@@ -235,7 +235,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
         }
       }
       if (this.wxids === expected) {
-        this.client.log(0, "wxids fully resovled");
+        this.client.log(0, "wxids fully resolved");
         this.client.webwxgeticon();
         this.storage.get("invited_" + this.client.thisUser.Uin)
         .then(function(invites) {
