@@ -227,7 +227,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
               this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
             }
           }
-          this.loggedIn(this.clientStates[selfContact]);
+          this.loggedIn(this.clientStates[myself]);
         } else {
           this.client.log(-1, "wxids not fully resolved");
         }
