@@ -389,62 +389,87 @@ WechatSocialProvider.prototype.acceptUserInvitation = function(invite) {
  */
 WechatSocialProvider.prototype.inviteUser = function(contact) {
   return new Promise(function (resolve, reject) {
-    var invisible_invite = this.createInvisibleInvite_(MESSAGE_TYPE.INVITE, contact);
-    if (this.invitesReceived[contact]) {
-      this.addOrUpdateClient_({"UserName": this.wxidToUsernameMap[contact], "wxid": contact}, "ONLINE");
+    this.createInvisibleInvite_(MESSAGE_TYPE.INVITE, contact)
+    .then(function(invisible_invite) {
+      if (this.invitesReceived[contact]) {
+        this.addOrUpdateClient_({"UserName": this.wxidToUsernameMap[contact], "wxid": contact}, "ONLINE");
+        this.client.webwxsendmsg(invisible_invite);
+        return;
+      }
+      var friendName = "friend";
+      if (this.client.contacts[this.wxidToUsernameMap[contact]] &&
+          this.client.contacts[this.wxidToUsernameMap[contact]].NickName) {
+        friendName = this.client.contacts[this.wxidToUsernameMap[contact]].NickName;
+      }
+      var info = "Hi " + friendName + "! I'd like to use uProxy with you. You can find more ";
+      info += "information at www.uproxy.org, or ask me about it!";
+      var plaintext_invite = {
+          "type": 1,
+          "content": info,
+          "recipient": this.wxidToUsernameMap[contact]
+      };
       this.client.webwxsendmsg(invisible_invite);
-      return;
-    }
-    var friendName = "friend";
-    if (this.client.contacts[this.wxidToUsernameMap[contact]] &&
-        this.client.contacts[this.wxidToUsernameMap[contact]].NickName) {
-      friendName = this.client.contacts[this.wxidToUsernameMap[contact]].NickName;
-    }
-    var info = "Hi " + friendName + "! I'd like to use uProxy with you. You can find more ";
-    info += "information at www.uproxy.org, or ask me about it!";
-    var plaintext_invite = {
-        "type": 1,
-        "content": info,
-        "recipient": this.wxidToUsernameMap[contact]
-    };
-    this.client.webwxsendmsg(invisible_invite);
-    this.client.webwxsendmsg(plaintext_invite);
+      this.client.webwxsendmsg(plaintext_invite);
+      resolve();
+    }, this.client.handleError.bind(this.client));
   }.bind(this));
 };
 
-/*
+/**
  *  Creates an invite that is useful for uProxy. This will also create a group chat for use with
  *  uProxy.
  */
 WechatSocialProvider.prototype.createInvisibleInvite_ = function(messageType, recipientWxid) {
-  var timestamp = this.invitesSent[recipientWxid] || Date.now();
-  var uProxy_info = JSON.stringify({
-    "userStatus": messageType,
-    "timestamp": timestamp
-  });
-  // check if chatroom between two users exists; 
-  // if yes, set recipient to that.
-  // else create chatroom and set recipient to that
-  var chatHash = this.chatHash_(this.client.thisUser.WXID, recipientWxid);
-  var recipientChatRoom = null;
-  for (var chatroom in this.client.chatrooms) { // possibly make lookup table for this
-    if (this.client.chatrooms[chatroom].NickName === chatHash) {
-      recipientChatRoom = this.client.chatrooms[chatroom];
-      break;
-    }
-  }
-  if (!recipientChatRoom) {
+  return new Promise(function(resolve, reject) { 
+    var timestamp = this.invitesSent[recipientWxid] || Date.now();
+    var uProxy_info = JSON.stringify({
+      "userStatus": messageType,
+      "timestamp": timestamp
+    });
+    // check if chatroom between two users exists; 
+    // if yes, set recipient to that.
+    // else create chatroom and set recipient to that
+    var chatHash1 = this.chatHash_(this.client.thisUser.WXID, recipientWxid);
+    var chatHash2 = this.chatHash_(recipientWxid, this.client.thisUser.WXID);
+    createSignalChannel_(this.wxidToUsernameMap[recipientWxid], chatHash1, chatHash2)
+    .then(function(chatroomUserName) {
+      var invite = {
+        "type": this.client.HIDDENMSGTYPE,
+        "content": uProxy_info,
+        "recipient": chatroomUserName 
+      };
+      this.invitesSent[recipientWxid] = timestamp;
+      this.storage.set("invited_" + this.client.thisUser.Uin, JSON.stringify(this.invitesSent));
+      return invite;
+    }.bind(this), this.client.handleError.bind(this.client));
+  }.bind(this));
+};
 
-  } else { 
-    var invite = {
-      "type": this.client.HIDDENMSGTYPE,
-      "content": uProxy_info,
-      "recipient": recipientChatRoom
-    };
-  }
-  this.invitesSent[recipientWxid] = timestamp;
-  this.storage.set("invited_" + this.client.thisUser.Uin, JSON.stringify(this.invitesSent));
-  return invite;
+/**
+ *  resolves with chatroomUserName
+ */
+WechatSocialProvider.prototype.createSignalChannel_ = function(contact, chatroomName, altName) {
+  return new Promise(function (resolve, reject) {
+    for (var chatroom in this.client.chatrooms) { // possibly make lookup table for this
+      if (this.client.chatrooms[chatroom].NickName === chatroomName) {
+        this.client.log(1, "SP: using original chatroom: " + chatroomName;
+        resolve(chatroom);
+        return; // chatroom already exists
+      } else if (this.client.chatrooms[chatroom].NickName === altName) {
+        this.client.log(1, "SP: using Alt chatroom: " + chatroomName;
+        resolve(chatroom);
+        return; // chatroom already exists
+      }
+    }
+    this.client.log(1, "SP: creating chatroom with name " + chatroomName);
+    var THE_INVISIBLE_CONTACT = "filehelper";
+    var list = [contact, THE_INVISIBLE_CONTACT];
+    this.client.webwxcreatechatroom(list)
+    .then(this.client.webwxbatchgetcontact.bind(this.client), this.client.handleError.bind(this.client))
+    .then(this.client.webwxupdatechatroom.bind(this.client, "modtopic", chatroomName), this.client.handleError.bind(this.client))
+    //.then(this.client.webwxupdatechatroom.bind(this.client, "delmember", arbitrarycontact), this.client.handleError.bind(this.client)) 
+    .then(resolve, reject);
+  }.bind(this));
 };
 
 /**
@@ -467,7 +492,7 @@ WechatSocialProvider.prototype.chatHash_ = function(wxid1, wxid2) {
   // result.length = 10;
   return CONTACT_NAME_SCHEME + result;
   // this is length of 17 as of Jan 24th, 2016
-}
+};
 
 // Register provider when in a module context.
 if (typeof freedom !== 'undefined') {

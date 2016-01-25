@@ -1,12 +1,15 @@
-var foo = 1;
-var bar = undefined;
-var baz = '';
+console.log("testing...");
 
-var thing = {
-  "blah": foo || bar
-};
+function one() {
+  return new Promise(function(resolve, reject) {
+    two().then(resolve, reject);
+  });
+}
 
-console.log(0);
-console.log(thing.one);
-console.log('');
-console.log(thing.blah);
+function two() {
+  return new Promise(function(resolve, reject) {
+    resolve("herp");
+  });
+}
+
+one().then(console.log);
