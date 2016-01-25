@@ -452,11 +452,11 @@ WechatSocialProvider.prototype.createSignalChannel_ = function(contact, chatroom
   return new Promise(function (resolve, reject) {
     for (var chatroom in this.client.chatrooms) { // possibly make lookup table for this
       if (this.client.chatrooms[chatroom].NickName === chatroomName) {
-        this.client.log(1, "SP: using original chatroom: " + chatroomName;
+        this.client.log(1, "SP: using original chatroom: " + chatroomName);
         resolve(chatroom);
         return; // chatroom already exists
       } else if (this.client.chatrooms[chatroom].NickName === altName) {
-        this.client.log(1, "SP: using Alt chatroom: " + chatroomName;
+        this.client.log(1, "SP: using Alt chatroom: " + chatroomName);
         resolve(chatroom);
         return; // chatroom already exists
       }
@@ -482,12 +482,12 @@ WechatSocialProvider.prototype.chatHash_ = function(wxid1, wxid2) {
   var two = wxid2.match(/wxid_(.*)/)[1];
   var temp = "";
   for (var i = 0; i < one.length; i++) { // length 14
-    temp += i % 2 == 0 ? one[i] : two[i];
+    temp += i % 2 === 0 ? one[i] : two[i];
   }
   temp = btoa(temp); // length 20
-  var result = ""
+  var result = "";
   for (i = 0; i < temp.length; i++) {
-    result += i % 2 == 0 ? temp[i] : ""; // take every other char
+    result += i % 2 === 0 ? temp[i] : ""; // take every other char
   }
   // result.length = 10;
   return CONTACT_NAME_SCHEME + result;
