@@ -154,8 +154,9 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
       try {
         var jason = JSON.parse(iconJSON);
         var userName = jason.iconURLPath.split("?")[1].split("&")[1].split("=")[1];
-        var user = this.client.contacts[userName];
+        var user = this.client.contacts[userName] || this.client.chatrooms[userName];
         var friend = this.userProfiles[user.Uin || user.wxid];
+        // TODO: detect myself here to give myself my icon.
         if (friend) {
           friend.imageData = jason.dataURL;
           this.dispatchEvent_("onUserProfile", friend);
@@ -201,6 +202,10 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           }
           if (userName !== myself) {
             this.addUserProfile_(this.client.contacts[userName]);
+          } else {
+            // TODO: is this necessary?
+            this.client.contacts[userName].wxid = wxid; 
+            this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
           }
           // if (this.invitesSent[wxid] && this.invitesReceived[wxid]) {
           //   this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
