@@ -156,7 +156,11 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
         var userName = jason.iconURLPath.split("?")[1].split("&")[1].split("=")[1];
         var user = this.client.contacts[userName] || this.client.chatrooms[userName];
         var friend = this.userProfiles[user.Uin || user.wxid];
-        // TODO: detect myself here to give myself my icon.
+        if (!friend && user.wxid === this.client.contacts[this.client.thisUser.UserName].wxid) {
+          // have wxid here, but thisUser only has a Uin... 
+          // TODO: detect myself here to give myself my icon.
+          friend = this.userProfiles[this.client.thisUser.Uin];
+        }
         if (friend) {
           friend.imageData = jason.dataURL;
           this.dispatchEvent_("onUserProfile", friend);
