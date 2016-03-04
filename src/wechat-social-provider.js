@@ -226,7 +226,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           // }
         }
         if (this.wxids === expected) {
-          this.client.log(0, "wxids fully resolved");
+          this.client.log(0, "wxids fully resolved: " + this.wxids + "/" + expected);
           this.client.webwxgeticon();
           for (var invitedWxid in this.invitesSent) {
             if (!this.invitesReceived[invitedWxid]) {
@@ -238,7 +238,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           }
           this.loggedIn(this.clientStates[myself]);
         } else {
-          this.client.log(-1, "wxids not fully resolved");
+          this.client.log(-1, "wxids not fully resolved: " + this.wxids + "/" + expected);
         }
       }
     }
