@@ -24,9 +24,15 @@ var WechatSocialProvider = function(dispatchEvent) {
   this.syncInterval = 4000;  // This seems like a good interval (August 1st, 2015)
 
   this.loggedIn = null;
-  this.wxids = 0;
 
   this.CONTACT_NAME_SCHEME = "uProxy_"; // + user1 / user2
+
+  // initialize in the initState function so that it may be called later to blank everything
+  // that should be blanked out when for example going through wechat login twice in one
+  // browser/uProxy session
+  this.clientStates = null;
+  this.wxids = null;
+  this.userProfiles = null;
 
   this.invitesSent = {}; // wxid => invite timestamp mapping
   this.invitesReceived = {}; // wxid => received invite timestamp mapping
@@ -45,6 +51,7 @@ WechatSocialProvider.prototype.initState_ = function() {
       this.client.isQQuser = value;
     }
   }.bind(this), this.client.handleError.bind(this.client));
+  this.wxids = 0;
   this.clientStates = {};
   this.userProfiles = {};
 };
@@ -53,6 +60,13 @@ WechatSocialProvider.prototype.initState_ = function() {
  * Initializes event handlers
  */
 WechatSocialProvider.prototype.initHandlers_ = function() {
+
+  /**
+   *  Gets called if/when syncchecking errors out (normal for logging out)
+   */
+  this.client.events.synccheckError = function(retcode) {
+    this.initState_();
+  }.bind(this);
 
   /*
    * Defines how to handle a newly received message.
@@ -106,33 +120,44 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
    *  @param {Object} — modified chatroom from this.client.webwxsync
    */
   this.client.events.onModChatroom = function(modChatroom) {
-    this.addOrUpdateClient_(modChatroom);
-    //for (var i = 0; i < modChatroom.MemberCount; i++) {
-    //  var member = modChatroom.MemberList[i];
-    //  var clientId = member.UserName;
-    //  if (member.wxid && !this.clientStates[clientId].userId) {
-    //    this.client.log(1, "contact Uin discovered: " + member.NickName + " => " + member.wxid);
-    //    this.clientStates[clientId].userId = member.wxid;
-    //    this.dispatchEvent_("onClientState", this.clientStates[clientId]);
-    //    this.addUserProfile_(member);
-    //  }
-    //}
+    // Don't know if they are online or offline here... let's be safe, and say offline?
+    this.addOrUpdateClient_(modChatroom, "OFFLINE");
+    // TODO: actually verify they're your uProxy friend........
+    if (modChatroom.MemberCount === 2 && modChatroom.NickName.startsWith(this.CONTACT_NAME_SCHEME)) {
+      for (var i = 0; i < modChatroom.MemberCount; i++) {
+        var member = modChatroom.MemberList[i];
+        if (member.Uin !== this.client.thisUser.Uin) {
+          var channelUser = {
+            "Uin": modChatroom.NickName,
+            "NickName": member.NickName + " ("+modChatroom.NickName+")",
+            // look into getting imageData...
+          };
+          this.addUserProfile_(channelUser);
+        }
+      }
+    }
+    //var userProfile = {
+    //  "userId": uid,  // Unique identification number
+    //  "name": friend.NickName || '',  // Their display name
+    //  "lastUpdated": Date.now(),
+    //  "url": friend.url || '',  // N/A
+    //  "imageData": '' // Gets added later.
+    //};
   }.bind(this);
 
   /*
    * Defines how to handle the receiving of a new UUID from the WeChat webservice.
    * @param {String} url of QR code
    */
-  this.client.events.onUUID = function(url) {
+  this.client.events.onUUID = function(qrsrc) {
     var OAUTH_REDIRECT_URLS = [
-        "https://www.uproxy.org/oauth-redirect-uri",
-        "http://freedomjs.org/",
-        "http://localhost:8080/",
-        "https://fmdppkkepalnkeommjadgbhiohihdhii.chromiumapp.org/"
-      ];
+      "https://www.uproxy.org/oauth-redirect-uri",
+      "http://freedomjs.org/",
+      "http://localhost:8080/",
+      "https://fmdppkkepalnkeommjadgbhiohihdhii.chromiumapp.org/"
+    ];
     var oauth = freedom["core.oauth"]();
-    var qrsrc = url;
-    url = "<h1>File any issues at https://github.com/freedomjs/freedom-social-wechat</h1>";
+    var url = "<h1>File any issues at https://github.com/freedomjs/freedom-social-wechat</h1>";
     url += "<img src='" + qrsrc + "'/>";
     url = "data:text/html," + encodeURIComponent(url);
     this.client.log(1, "QR code can be scanned at: " + url, -1);
@@ -204,12 +229,13 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           if (!this.userProfiles[wxid]) {
             this.wxids++;
           }
-          if (userName !== myself) {
-            this.addUserProfile_(this.client.contacts[userName]);
-          } else {
-            // TODO: is this necessary?
+          if (userName === myself) {
             this.client.contacts[userName].wxid = wxid; 
+            this.client.thisUser.wxid = wxid;
+            // TODO: decide if i need to do this, since it's already done at wechat login...
             this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
+          } else {
+            this.addUserProfile_(this.client.contacts[userName]);
           }
           // if (this.invitesSent[wxid] && this.invitesReceived[wxid]) {
           //   this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
@@ -377,6 +403,10 @@ WechatSocialProvider.prototype.addOrUpdateClient_ = function(friend, availabilit
       "lastUpdated": Date.now(),
       "lastSeen": Date.now()
     };
+    if (friend.UserName.startsWith("@@") && !friend.Uin && !friend.wxid &&
+        friend.NickName.startsWith(this.CONTACT_NAME_SCHEME)) {
+      state.userId = friend.NickName;
+    }
   }
   this.clientStates[friend.UserName] = state;
   this.dispatchEvent_('onClientState', this.clientStates[friend.UserName]);
@@ -412,6 +442,7 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
       }
       var info = "Hi " + friendName + "! I'd like to use uProxy with you. You can find more ";
       info += "information at www.uproxy.org, or ask me about it!";
+      // TODO: add in information about the group chat created here?
       var plaintext_invite = {
           "type": 1,
           "content": info,
@@ -420,7 +451,7 @@ WechatSocialProvider.prototype.inviteUser = function(contact) {
       this.client.webwxsendmsg(invisible_invite);
       this.client.webwxsendmsg(plaintext_invite);
       resolve();
-    }, this.client.handleError.bind(this.client));
+    }.bind(this), this.client.handleError.bind(this.client));
   }.bind(this));
 };
 
@@ -438,9 +469,12 @@ WechatSocialProvider.prototype.createInvisibleInvite_ = function(messageType, re
     // check if chatroom between two users exists; 
     // if yes, set recipient to that.
     // else create chatroom and set recipient to that
-    var chatHash1 = this.chatHash_(this.client.thisUser.WXID, recipientWxid);
-    var chatHash2 = this.chatHash_(recipientWxid, this.client.thisUser.WXID);
-    createSignalChannel_(this.wxidToUsernameMap[recipientWxid], chatHash1, chatHash2)
+    console.log("recipientWxid: " + recipientWxid);
+    console.log("thisUser.wxid: " + this.client.thisUser.wxid);
+    console.log("thisUser.Uin: " + this.client.thisUser.Uin);
+    var chatHash1 = this.chatHash_(this.client.thisUser.wxid, recipientWxid);
+    var chatHash2 = this.chatHash_(recipientWxid, this.client.thisUser.wxid);
+    this.createSignalChannel_(this.wxidToUsernameMap[recipientWxid], chatHash1, chatHash2)
     .then(function(chatroomUserName) {
       var invite = {
         "type": this.client.HIDDENMSGTYPE,
@@ -449,7 +483,7 @@ WechatSocialProvider.prototype.createInvisibleInvite_ = function(messageType, re
       };
       this.invitesSent[recipientWxid] = timestamp;
       this.storage.set("invited_" + this.client.thisUser.Uin, JSON.stringify(this.invitesSent));
-      return invite;
+      resolve(invite);
     }.bind(this), this.client.handleError.bind(this.client));
   }.bind(this));
 };
@@ -459,7 +493,7 @@ WechatSocialProvider.prototype.createInvisibleInvite_ = function(messageType, re
  */
 WechatSocialProvider.prototype.createSignalChannel_ = function(contact, chatroomName, altName) {
   return new Promise(function (resolve, reject) {
-    for (var chatroom in this.client.chatrooms) { // possibly make lookup table for this
+    for (var chatroom in this.client.chatrooms) { // TODO: possibly make lookup table for this
       if (this.client.chatrooms[chatroom].NickName === chatroomName) {
         this.client.log(1, "SP: using original chatroom: " + chatroomName);
         resolve(chatroom);
@@ -477,7 +511,11 @@ WechatSocialProvider.prototype.createSignalChannel_ = function(contact, chatroom
     .then(this.client.webwxbatchgetcontact.bind(this.client), this.client.handleError.bind(this.client))
     .then(this.client.webwxupdatechatroom.bind(this.client, "modtopic", chatroomName), this.client.handleError.bind(this.client))
     //.then(this.client.webwxupdatechatroom.bind(this.client, "delmember", arbitrarycontact), this.client.handleError.bind(this.client)) 
-    .then(resolve, reject);
+    //.then(resolve, reject);
+    .then(function(chatroomUserName) {
+      this.client.log(1, "SP: Chatroom fully updated", chatroomUserName);
+      resolve(chatroomUserName);
+    }.bind(this), reject);
   }.bind(this));
 };
 
@@ -499,7 +537,7 @@ WechatSocialProvider.prototype.chatHash_ = function(wxid1, wxid2) {
     result += i % 2 === 0 ? temp[i] : ""; // take every other char
   }
   // result.length = 10;
-  return CONTACT_NAME_SCHEME + result;
+  return this.CONTACT_NAME_SCHEME + result;
   // this is length of 17 as of Jan 24th, 2016
 };
 
