@@ -1,7 +1,7 @@
 {
   "name": "freedom-social-wechat",
   "description": "WeChat Social Provider for freedomjs",
-  "version": "0.1.11",
+  "version": "0.1.13",
   "repository": {
     "type": "git",
     "url": "https://github.com/freedomjs/freedom-social-wechat.git"
