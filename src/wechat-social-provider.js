@@ -15,7 +15,6 @@ var MESSAGE_TYPE = {
  * Constructor for a WechatSocialProvider object.
  */
 var WechatSocialProvider = function(dispatchEvent) {
-  this.client = new wechat.weChatClient(true, true);
   this.dispatchEvent_ = dispatchEvent;
   this.networkName_ = "wechat";
   this.initLogger_("WechatSocialProvider");
@@ -30,6 +29,7 @@ var WechatSocialProvider = function(dispatchEvent) {
   // initialize in the initState function so that it may be called later to blank everything
   // that should be blanked out when for example going through wechat login twice in one
   // browser/uProxy session
+  this.client = null;
   this.clientStates = null;
   this.wxids = null;
   this.userProfiles = null;
@@ -46,6 +46,7 @@ var WechatSocialProvider = function(dispatchEvent) {
  * Initializes the state of this WechatSocialProvider
  */
 WechatSocialProvider.prototype.initState_ = function() {
+  this.client = new wechat.weChatClient(true, true);
   this.storage.get("WechatSocialProvider-was-QQ-user").then(function(value) {
     if (value !== null) {
       this.client.isQQuser = value;
@@ -61,11 +62,18 @@ WechatSocialProvider.prototype.initState_ = function() {
  */
 WechatSocialProvider.prototype.initHandlers_ = function() {
 
+  this.client.events.synccheckZero = function() {
+    // TODO: possibly nothing, but possibly ensure that login happens here if it hasn't.
+  }.bind(this);
+
   /**
    *  Gets called if/when syncchecking errors out (normal for logging out)
    */
   this.client.events.synccheckError = function(retcode) {
     this.initState_();
+    if (retcode === 1205) {
+      this.syncInterval += 1000;
+    }
   }.bind(this);
 
   /*
@@ -229,12 +237,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
           if (!this.userProfiles[wxid]) {
             this.wxids++;
           }
-          if (userName === myself) {
-            this.client.contacts[userName].wxid = wxid; 
-            this.client.thisUser.wxid = wxid;
-            // TODO: decide if i need to do this, since it's already done at wechat login...
-            this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
-          } else {
+          if (userName !== myself) {
             this.addUserProfile_(this.client.contacts[userName]);
           }
           // if (this.invitesSent[wxid] && this.invitesReceived[wxid]) {
@@ -262,7 +265,7 @@ WechatSocialProvider.prototype.initHandlers_ = function() {
               this.addOrUpdateClient_(this.client.contacts[userName], "ONLINE");
             }
           }
-          this.loggedIn(this.clientStates[myself]);
+          //this.loggedIn(this.clientStates[myself]);
         } else {
           this.client.log(-1, "wxids not fully resolved: " + this.wxids + "/" + expected);
         }
@@ -306,7 +309,8 @@ WechatSocialProvider.prototype.login = function(loginOpts) {
       this.client.webwxgetcontact(false).then(function() {
         this.addOrUpdateClient_(this.client.thisUser, "ONLINE");
         this.addUserProfile_(this.client.thisUser);
-        this.loggedIn = fulfillLogin;
+        fulfillLogin(this.clientStates[this.client.thisUser.UserName]);
+        //this.loggedIn = fulfillLogin;
       }.bind(this), this.client.handleError.bind(this));
     }.bind(this), this.client.handleError.bind(this));  // end of getOAuthToken_
   }.bind(this));  // end of return new Promise
@@ -472,8 +476,17 @@ WechatSocialProvider.prototype.createInvisibleInvite_ = function(messageType, re
     console.log("recipientWxid: " + recipientWxid);
     console.log("thisUser.wxid: " + this.client.thisUser.wxid);
     console.log("thisUser.Uin: " + this.client.thisUser.Uin);
-    var chatHash1 = this.chatHash_(this.client.thisUser.wxid, recipientWxid);
-    var chatHash2 = this.chatHash_(recipientWxid, this.client.thisUser.wxid);
+    var thisUserToken = this.client.thisUser.wxid || null;
+    if (!thisUserToken) {
+      var zFill = "";
+      // TODO: fix magic 14 here with a named constant
+      for (var i = 0; i < 14 - (""+this.client.thisUser.Uin).length; i++) { 
+        zFill += "0";
+      }
+      thisUserToken = zFill + this.client.thisUser.Uin;
+    }
+    var chatHash1 = this.chatHash_(thisUserToken, recipientWxid);
+    var chatHash2 = this.chatHash_(recipientWxid, thisUserToken);
     this.createSignalChannel_(this.wxidToUsernameMap[recipientWxid], chatHash1, chatHash2)
     .then(function(chatroomUserName) {
       var invite = {
@@ -525,8 +538,10 @@ WechatSocialProvider.prototype.createSignalChannel_ = function(contact, chatroom
  *  their groupname. 
  */
 WechatSocialProvider.prototype.chatHash_ = function(wxid1, wxid2) {
-  var one = wxid1.match(/wxid_(.*)/)[1];
-  var two = wxid2.match(/wxid_(.*)/)[1];
+  var wxidM1 = wxid1.match(/wxid_(.*)/);
+  var wxidM2 = wxid2.match(/wxid_(.*)/);
+  var one = wxidM1 ? wxidM1[1] : wxid1; 
+  var two = wxidM2 ? wxidM2[1] : wxid2; 
   var temp = "";
   for (var i = 0; i < one.length; i++) { // length 14
     temp += i % 2 === 0 ? one[i] : two[i];
